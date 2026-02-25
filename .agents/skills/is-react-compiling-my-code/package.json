@@ -1,0 +1,9 @@
+{
+  "name": "is-react-compiling-my-code",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@babel/core": "^7.26.0",
+    "@babel/preset-typescript": "^7.26.0"
+  }
+}

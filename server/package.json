@@ -1,0 +1,7 @@
+{
+  "name": "agents-ui-server",
+  "version": "0.1.0",
+  "scripts": {
+    "start": "bun run index.ts"
+  }
+}

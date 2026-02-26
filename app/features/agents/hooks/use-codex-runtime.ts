@@ -20,7 +20,6 @@ import {
 import { parseCodexThreadIdFromRawLine } from "@/app/features/agents/discovery"
 import {
   codexHubs,
-  proxyWs,
   reconnectTimers,
   scheduleReconnect,
 } from "@/app/features/agents/runtime-state"
@@ -1561,7 +1560,7 @@ export function useCodexRuntime({
         reconnectTimers.delete(targetUrl)
       }
 
-      const ws = new WebSocket(proxyWs(targetUrl))
+      const ws = new WebSocket(targetUrl)
       const hub: CodexHub = {
         ws,
         url: targetUrl,
@@ -1658,7 +1657,7 @@ export function useCodexRuntime({
 
         const attemptReconnect = (attempt: number) => {
           const scheduled = scheduleReconnect(targetUrl, attempt, () => {
-            const newWs = new WebSocket(proxyWs(targetUrl))
+            const newWs = new WebSocket(targetUrl)
             let connectedHub: CodexHub | undefined
 
             newWs.onopen = () => {

@@ -27,12 +27,3 @@ export function scheduleReconnect(
   reconnectTimers.set(key, timer)
   return true
 }
-
-// WebSocket proxy: Codex app-server doesn't support permessage-deflate
-// (browser always negotiates it), so we route through a server-side proxy
-// running on port 3001 (started by instrumentation.ts).
-export function proxyWs(targetUrl: string): string {
-  const host =
-    typeof window !== "undefined" ? window.location.hostname : "localhost"
-  return `ws://${host}:3001/?url=${encodeURIComponent(targetUrl)}`
-}

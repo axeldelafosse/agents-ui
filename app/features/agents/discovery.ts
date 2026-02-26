@@ -15,7 +15,7 @@ function formatHostForUrl(host: string): string {
 }
 
 export function probeUrl(): string {
-  return `http://${formatHostForUrl(currentHost())}:3001/probe?ports=${ALL_PROBE_PORTS.join(",")}`
+  return `/api/probe?ports=${ALL_PROBE_PORTS.join(",")}`
 }
 
 export function portToDiscover(port: number): DiscoveredEndpoint | null {

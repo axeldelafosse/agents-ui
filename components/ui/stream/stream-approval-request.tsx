@@ -126,6 +126,7 @@ interface StreamApprovalRequestProps extends StreamApprovalCallbacks {
 export function StreamApprovalRequest({
   item,
   onApprove,
+  onApproveForSession,
   onDeny,
   onSubmitInput,
 }: StreamApprovalRequestProps) {
@@ -333,6 +334,15 @@ export function StreamApprovalRequest({
           >
             Approve
           </button>
+          {onApproveForSession && (
+            <button
+              className="rounded-md border border-teal-700/60 bg-teal-900/30 px-3 py-1.5 text-sm text-teal-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500/70"
+              onClick={() => onApproveForSession(item)}
+              type="button"
+            >
+              Accept for session
+            </button>
+          )}
           <button
             className="rounded-md border border-red-700/60 bg-red-900/25 px-3 py-1.5 text-red-100 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500/70 disabled:cursor-not-allowed disabled:opacity-60"
             disabled={!onDeny}

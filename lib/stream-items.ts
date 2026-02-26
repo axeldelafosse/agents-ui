@@ -18,6 +18,7 @@ export const STREAM_ITEM_TYPES = [
   "turn_complete",
   "error",
   "status",
+  "turn_diff",
   "raw_item",
 ] as const
 

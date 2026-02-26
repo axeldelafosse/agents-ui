@@ -157,18 +157,11 @@ Lists all currently loaded thread IDs. Not supported by all server versions.
 
 Response: `{ "result": { "data": ["thread-1", "thread-2"] } }`
 
-### `addConversationListener` (request)
+### `addConversationListener` (deprecated)
 
-Subscribe to events for a specific thread. Not supported by all server versions.
+> **Deprecated in v2.** Thread subscriptions are now automatic: calling `thread/start` or `thread/resume` auto-subscribes the client. Use `thread/unsubscribe` to stop receiving events for a thread.
 
-```json
-{
-  "jsonrpc": "2.0",
-  "method": "addConversationListener",
-  "id": 5,
-  "params": { "conversationId": "019c90d5-...-0cdc", "experimentalRawEvents": true }
-}
-```
+Legacy method to subscribe to events for a specific thread. Not supported by v2 app-server builds.
 
 ## Turn lifecycle
 

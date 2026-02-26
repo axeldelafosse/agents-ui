@@ -1887,13 +1887,11 @@ export function adaptCodexMessageToStreamItems(
   }
 
   if (method === "turn/diff/updated") {
-    const diff = readString(input.params?.diff) ?? ""
-    const created = createCodexItem(state, "raw_item", {
+    const diff = readString(readObject(input.params)?.diff) ?? ""
+    const created = createCodexItem(state, "turn_diff", {
       agentId,
-      status: diff ? "complete" : "streaming",
-      text: diff || undefined,
+      status: "complete",
       threadId,
-      title: "Turn Diff",
       turnId,
       data: {
         diff,

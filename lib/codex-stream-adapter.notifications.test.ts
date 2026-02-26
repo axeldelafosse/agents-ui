@@ -17,7 +17,7 @@ function expectCreate(
 
 describe("codex-stream-adapter notification parity", () => {
   describe("turn/diff/updated", () => {
-    test("creates a raw_item stream item with diff data", () => {
+    test("creates a turn_diff stream item with diff data", () => {
       const state = createCodexStreamAdapterState()
       const actions = adaptCodexMessageToStreamItems(state, {
         method: "turn/diff/updated",
@@ -28,11 +28,9 @@ describe("codex-stream-adapter notification parity", () => {
         },
         agentId: "agent-1",
       })
-      // turn/diff/updated is not a recognized lifecycle method, so it falls through
-      // to the raw_item catch-all handler
       expect(actions.length).toBeGreaterThan(0)
       const created = expectCreate(actions[0])
-      expect(created.item.type).toBe("raw_item")
+      expect(created.item.type).toBe("turn_diff")
       expect(created.item.status).toBe("complete")
       expect(created.item.threadId).toBe("thread-1")
       expect(created.item.turnId).toBe("turn-1")

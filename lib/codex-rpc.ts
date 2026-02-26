@@ -22,6 +22,8 @@ import type { ThreadLoadedListResponse } from "@/codex-app-server-schemas/v2/Thr
 import type { ThreadReadResponse } from "@/codex-app-server-schemas/v2/ThreadReadResponse"
 import type { ThreadResumeResponse } from "@/codex-app-server-schemas/v2/ThreadResumeResponse"
 import type { ThreadStartResponse } from "@/codex-app-server-schemas/v2/ThreadStartResponse"
+import type { ThreadUnsubscribeResponse } from "@/codex-app-server-schemas/v2/ThreadUnsubscribeResponse"
+import type { ThreadUnsubscribeStatus } from "@/codex-app-server-schemas/v2/ThreadUnsubscribeStatus"
 import type { TurnStartResponse } from "@/codex-app-server-schemas/v2/TurnStartResponse"
 
 type CodexLegacyEventType = EventMsg["type"]
@@ -125,6 +127,7 @@ type CodexKnownResult =
   | ThreadReadResponse
   | ThreadResumeResponse
   | ThreadStartResponse
+  | ThreadUnsubscribeResponse
   | TurnStartResponse
   | CancelLoginAccountResponse
   | ConfigReadResponse
@@ -303,4 +306,20 @@ export function codexThreadPreviewFromResult(
   result?: CodexRpcResult
 ): string | undefined {
   return readTrimmedString(result?.thread?.preview)
+}
+
+const VALID_UNSUBSCRIBE_STATUSES = new Set<string>([
+  "unsubscribed",
+  "notSubscribed",
+  "notLoaded",
+])
+
+export function codexUnsubscribeStatusFromResult(
+  result?: CodexRpcResult
+): ThreadUnsubscribeStatus | undefined {
+  const status = readTrimmedString(result?.status)
+  if (status && VALID_UNSUBSCRIBE_STATUSES.has(status)) {
+    return status as ThreadUnsubscribeStatus
+  }
+  return undefined
 }

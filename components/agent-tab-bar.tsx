@@ -23,7 +23,7 @@ function AgentTabBarComponent({
 }: AgentTabBarProps) {
   return (
     <Tabs className="mx-4" onValueChange={onTabChange} value={activeTabId}>
-      <TabsList className="no-scrollbar h-auto w-full justify-start gap-1 overflow-x-auto rounded-xl border border-zinc-800 bg-zinc-950 p-1">
+      <TabsList className="no-scrollbar h-auto w-full justify-start gap-1 overflow-x-auto rounded-2xl border border-zinc-800 bg-zinc-950 p-1">
         {tabs.map((tab) => {
           const { representative } = tab
           const sessionLabel = shortId(tab.identityId)

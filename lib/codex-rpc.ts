@@ -18,9 +18,27 @@ type CodexLegacyEventNotification = {
   }
 }[CodexLegacyEventType]
 
+type CodexApprovalNotification =
+  | {
+      method: "item/commandExecution/requestApproval"
+      params: Record<string, unknown>
+    }
+  | {
+      method: "item/fileChange/requestApproval"
+      params: Record<string, unknown>
+    }
+  | { method: "item/tool/requestUserInput"; params: Record<string, unknown> }
+  | {
+      method: "item/commandExecution/terminalInteraction"
+      params: Record<string, unknown>
+    }
+  | { method: "item/fileChange/outputDelta"; params: Record<string, unknown> }
+  | { method: "item/mcpToolCall/progress"; params: Record<string, unknown> }
+
 export type CodexKnownNotification =
   | ServerNotification
   | CodexLegacyEventNotification
+  | CodexApprovalNotification
 
 export type CodexKnownMethod = CodexKnownNotification["method"]
 

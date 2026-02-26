@@ -19,6 +19,12 @@ import type {
   Status,
 } from "@/app/features/agents/types"
 import {
+  adaptClaudeStreamMessage,
+  type ClaudeStreamAdapterState,
+  createClaudeStreamAdapterState,
+} from "@/lib/claude-stream-adapter"
+import { applyStreamActions } from "@/lib/stream-items"
+import {
   type ClaudeOutputMessage,
   type ClaudeOutputState,
   createClaudeOutputState,
@@ -43,6 +49,15 @@ interface UseClaudeRuntimeResult {
   claudeSessionAgentIds: MutableRefObject<Map<string, string>>
   claudeSessionIds: MutableRefObject<Map<string, string>>
   connectClaude: (targetUrl: string, opts?: { silent?: boolean }) => void
+  sendClaudeControlResponse: (
+    agentId: string,
+    payload: {
+      allow: boolean
+      input?: string | Record<string, string>
+      requestId: string
+      updatedInput?: unknown
+    }
+  ) => boolean
 }
 
 export function useClaudeRuntime({
@@ -53,10 +68,44 @@ export function useClaudeRuntime({
 }: UseClaudeRuntimeParams): UseClaudeRuntimeResult {
   const claudeLineBuffers = useRef(new Map<string, string>())
   const claudeOutputStates = useRef(new Map<string, ClaudeOutputState>())
+  const claudeStreamAdapterStates = useRef(
+    new Map<string, ClaudeStreamAdapterState>()
+  )
   const claudeConnectionAgentIds = useRef(new Map<string, string>())
   const claudeConnectionOwnedAgents = useRef(new Map<string, Set<string>>())
   const claudeSessionIds = useRef(new Map<string, string>())
   const claudeSessionAgentIds = useRef(new Map<string, string>())
+
+  const applyClaudeStreamMessage = useCallback(
+    (id: string, msg: ClaudeUIMessage) => {
+      const currentState =
+        claudeStreamAdapterStates.current.get(id) ??
+        createClaudeStreamAdapterState()
+      const result = adaptClaudeStreamMessage(msg, currentState, {
+        agentId: id,
+      })
+      claudeStreamAdapterStates.current.set(id, result.state)
+      if (result.actions.length === 0) {
+        return
+      }
+      setAgents((prev) =>
+        prev.map((agent) => {
+          if (agent.id !== id) {
+            return agent
+          }
+          const streamItems = applyStreamActions(
+            agent.streamItems,
+            result.actions
+          )
+          if (streamItems === agent.streamItems) {
+            return agent
+          }
+          return { ...agent, streamItems }
+        })
+      )
+    },
+    [setAgents]
+  )
 
   const applyClaudeOutputMessage = useCallback(
     (id: string, msg: ClaudeOutputMessage) => {
@@ -102,6 +151,21 @@ export function useClaudeRuntime({
     [agentsRef, setAgents]
   )
 
+  const addToOwnedAgents = useCallback(
+    (connectionId: string, agentId: string) => {
+      const owned = claudeConnectionOwnedAgents.current.get(connectionId)
+      if (owned) {
+        owned.add(agentId)
+      } else {
+        claudeConnectionOwnedAgents.current.set(
+          connectionId,
+          new Set([agentId])
+        )
+      }
+    },
+    []
+  )
+
   const rotateClaudeSessionAgent = useCallback(
     (connectionId: string, sessionId: string): string => {
       const currentAgentId =
@@ -117,15 +181,7 @@ export function useClaudeRuntime({
           // Fall through to create a fresh agent below
         } else {
           claudeConnectionAgentIds.current.set(connectionId, canonicalAgentId)
-          const owned = claudeConnectionOwnedAgents.current.get(connectionId)
-          if (owned) {
-            owned.add(canonicalAgentId)
-          } else {
-            claudeConnectionOwnedAgents.current.set(
-              connectionId,
-              new Set([canonicalAgentId])
-            )
-          }
+          addToOwnedAgents(connectionId, canonicalAgentId)
           return canonicalAgentId
         }
       }
@@ -133,7 +189,9 @@ export function useClaudeRuntime({
       const currentAgent = agentsRef.current.find(
         (a) => a.id === currentAgentId
       )
-      const currentHasContent = Boolean(currentAgent?.output)
+      const currentHasContent = Boolean(
+        currentAgent?.output || currentAgent?.streamItems.length
+      )
       if (
         currentSessionId === sessionId &&
         currentAgent?.status !== "disconnected"
@@ -146,8 +204,7 @@ export function useClaudeRuntime({
       ) {
         return currentAgentId
       }
-      const baseAgent = currentAgent
-      if (!baseAgent) {
+      if (!currentAgent) {
         return currentAgentId
       }
 
@@ -155,26 +212,19 @@ export function useClaudeRuntime({
       const nextAgent: Agent = {
         id: nextAgentId,
         output: "",
+        streamItems: [],
         protocol: "claude",
         sessionId,
-        status: baseAgent.status,
-        url: baseAgent.url,
+        status: currentAgent.status,
+        url: currentAgent.url,
       }
       setAgents((prev) => [...prev, nextAgent])
       claudeSessionIds.current.set(nextAgentId, sessionId)
       claudeConnectionAgentIds.current.set(connectionId, nextAgentId)
-      const owned = claudeConnectionOwnedAgents.current.get(connectionId)
-      if (owned) {
-        owned.add(nextAgentId)
-      } else {
-        claudeConnectionOwnedAgents.current.set(
-          connectionId,
-          new Set([nextAgentId])
-        )
-      }
+      addToOwnedAgents(connectionId, nextAgentId)
       return nextAgentId
     },
-    [agentsRef, setAgents]
+    [agentsRef, setAgents, addToOwnedAgents]
   )
 
   const rotateClaudeConnectionAgent = useCallback(
@@ -187,7 +237,13 @@ export function useClaudeRuntime({
       if (!currentAgent) {
         return currentAgentId
       }
-      if (!(currentAgent.output || currentAgent.sessionId)) {
+      if (
+        !(
+          currentAgent.output ||
+          currentAgent.sessionId ||
+          currentAgent.streamItems.length
+        )
+      ) {
         return currentAgentId
       }
 
@@ -195,6 +251,7 @@ export function useClaudeRuntime({
       const nextAgent: Agent = {
         id: nextAgentId,
         output: "",
+        streamItems: [],
         protocol: "claude",
         status: "connected",
         url: currentAgent.url,
@@ -293,6 +350,7 @@ export function useClaudeRuntime({
         incomingSessionId,
         isInitMessage
       )
+      applyClaudeStreamMessage(mappedAgentId, normalizedMsg)
 
       if (isInitMessage) {
         return
@@ -309,7 +367,70 @@ export function useClaudeRuntime({
 
       applyClaudeOutputMessage(mappedAgentId, normalizedMsg)
     },
-    [applyClaudeOutputMessage, handleClaudeStatusDisconnect, routeClaudeAgent]
+    [
+      applyClaudeOutputMessage,
+      applyClaudeStreamMessage,
+      handleClaudeStatusDisconnect,
+      routeClaudeAgent,
+    ]
+  )
+
+  const resolveClaudeConnectionId = useCallback((agentId: string) => {
+    if (claudeConns.has(agentId)) {
+      return agentId
+    }
+    for (const [
+      connectionId,
+      ownedAgents,
+    ] of claudeConnectionOwnedAgents.current.entries()) {
+      if (ownedAgents.has(agentId)) {
+        return connectionId
+      }
+    }
+    return undefined
+  }, [])
+
+  const sendClaudeControlResponse = useCallback(
+    (
+      agentId: string,
+      payload: {
+        allow: boolean
+        input?: string | Record<string, string>
+        requestId: string
+        updatedInput?: unknown
+      }
+    ): boolean => {
+      const connectionId = resolveClaudeConnectionId(agentId)
+      if (!connectionId) {
+        pushDebugEvent(
+          `claude approval-drop agent=${shortId(agentId)} reason=no-connection`
+        )
+        return false
+      }
+      const conn = claudeConns.get(connectionId)
+      if (!conn || conn.ws.readyState !== WebSocket.OPEN) {
+        pushDebugEvent(
+          `claude approval-drop agent=${shortId(agentId)} reason=ws-not-open`
+        )
+        return false
+      }
+      conn.ws.send(
+        JSON.stringify({
+          type: "control_response",
+          request_id: payload.requestId,
+          permission: { allow: payload.allow },
+          ...(payload.input !== undefined && { input: payload.input }),
+          ...(payload.updatedInput !== undefined && {
+            updated_input: payload.updatedInput,
+          }),
+        })
+      )
+      pushDebugEvent(
+        `claude approval-send agent=${shortId(agentId)} request=${shortId(payload.requestId)} allow=${payload.allow}`
+      )
+      return true
+    },
+    [pushDebugEvent, resolveClaudeConnectionId]
   )
 
   const handleClaudeFallbackLine = useCallback(
@@ -378,6 +499,7 @@ export function useClaudeRuntime({
         protocol: "claude",
         status: "connecting",
         output: "",
+        streamItems: [],
       }
       setAgents((prev) => [...prev, agent])
 
@@ -399,6 +521,7 @@ export function useClaudeRuntime({
         claudeLineBuffers.current.delete(id)
         for (const agentId of ownedAgentIds) {
           claudeOutputStates.current.delete(agentId)
+          claudeStreamAdapterStates.current.delete(agentId)
           // Clear stale session→agent mappings so reconnects don't route to dead agents
           const sessionId = claudeSessionIds.current.get(agentId)
           if (
@@ -442,6 +565,7 @@ export function useClaudeRuntime({
               claudeLineBuffers.current.delete(id)
               for (const agentId of collectOwnedAgentIds()) {
                 claudeOutputStates.current.delete(agentId)
+                claudeStreamAdapterStates.current.delete(agentId)
               }
               attemptReconnect(attempt + 1)
             }
@@ -475,5 +599,6 @@ export function useClaudeRuntime({
     claudeSessionAgentIds,
     claudeSessionIds,
     connectClaude,
+    sendClaudeControlResponse,
   }
 }

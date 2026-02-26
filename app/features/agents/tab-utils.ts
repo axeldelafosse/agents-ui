@@ -56,8 +56,12 @@ function shouldPreferTabRepresentative(
   if (candidateStatus !== currentStatus) {
     return candidateStatus > currentStatus
   }
-  const candidateHasOutput = Boolean(candidate.output)
-  const currentHasOutput = Boolean(current.output)
+  const candidateHasOutput = Boolean(
+    candidate.output || candidate.streamItems.length > 0
+  )
+  const currentHasOutput = Boolean(
+    current.output || current.streamItems.length > 0
+  )
   if (candidateHasOutput !== currentHasOutput) {
     return candidateHasOutput
   }
@@ -130,12 +134,26 @@ export function isCodexItemMessage(method?: string): boolean {
     method === "item/completed" ||
     method === "item/commandExecution/outputDelta" ||
     method === "item/reasoning/summaryTextDelta" ||
+    method === "item/reasoning/textDelta" ||
+    method === "item/reasoning/summaryPartAdded" ||
+    method === "item/plan/delta" ||
+    method === "item/commandExecution/terminalInteraction" ||
+    method === "item/fileChange/outputDelta" ||
+    method === "item/mcpToolCall/progress" ||
+    method === "item/commandExecution/requestApproval" ||
+    method === "item/fileChange/requestApproval" ||
+    method === "item/tool/requestUserInput" ||
     method === "item/started"
   )
 }
 
 export function isTransientPlaceholderAgent(agent: Agent): boolean {
-  return !(agent.output || agent.threadId || agent.sessionId)
+  return !(
+    agent.output ||
+    agent.streamItems.length > 0 ||
+    agent.threadId ||
+    agent.sessionId
+  )
 }
 
 export function shouldHidePlaceholderAgent(
@@ -153,6 +171,11 @@ export function shouldHidePlaceholderAgent(
       candidate.id !== agent.id &&
       candidate.protocol === agent.protocol &&
       candidate.url === agent.url &&
-      Boolean(candidate.output || candidate.threadId || candidate.sessionId)
+      Boolean(
+        candidate.output ||
+          candidate.streamItems.length > 0 ||
+          candidate.threadId ||
+          candidate.sessionId
+      )
   )
 }

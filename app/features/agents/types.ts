@@ -1,4 +1,5 @@
 import type { CodexRpcMessage } from "@/lib/codex-rpc"
+import type { StreamItem } from "@/lib/stream-items"
 import type {
   ClaudeDelta,
   ClaudeMessageContentBlock,
@@ -18,6 +19,7 @@ export interface Agent {
   protocol: Protocol
   sessionId?: string // claude session id (for display)
   status: Status
+  streamItems: StreamItem[]
   threadId?: string // codex thread id (for display)
   threadName?: string // codex thread/session name (if available)
   url: string

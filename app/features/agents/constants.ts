@@ -51,16 +51,32 @@ export const CODEX_TASK_DONE_METHODS = new Set<string>(
   CODEX_TASK_DONE_METHOD_LIST
 )
 
-export const CODEX_NOOP_NOTIFICATION_METHOD_LIST = [
+export const CODEX_STRUCTURED_NOTIFICATION_METHOD_LIST = [
   "item/reasoning/summaryTextDelta",
   "item/reasoning/summaryPartAdded",
+  "item/reasoning/textDelta",
   "codex/event/agent_reasoning_delta",
   "codex/event/reasoning_content_delta",
   "codex/event/agent_reasoning_section_break",
   "item/started",
   "codex/event/item_started",
+  "item/plan/delta",
+  "turn/plan/updated",
   "codex/event/collab_waiting_begin",
+  "item/commandExecution/requestApproval",
+  "item/commandExecution/terminalInteraction",
+  "codex/event/terminal_interaction",
+  "item/fileChange/outputDelta",
+  "item/fileChange/requestApproval",
+  "item/mcpToolCall/progress",
+  "item/tool/requestUserInput",
 ] as const satisfies readonly CodexKnownMethod[]
+export const CODEX_STRUCTURED_NOTIFICATION_METHODS = new Set<string>(
+  CODEX_STRUCTURED_NOTIFICATION_METHOD_LIST
+)
+
+export const CODEX_NOOP_NOTIFICATION_METHOD_LIST =
+  [] as const satisfies readonly CodexKnownMethod[]
 export const CODEX_NOOP_NOTIFICATION_METHODS = new Set<string>(
   CODEX_NOOP_NOTIFICATION_METHOD_LIST
 )

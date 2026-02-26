@@ -11,6 +11,7 @@ import {
   CODEX_PENDING_TURN_EVENT_MAX_TOTAL,
   CODEX_PENDING_TURN_EVENT_TTL_MS,
   CODEX_PRETTY_MODE,
+  CODEX_STRUCTURED_NOTIFICATION_METHODS,
   CODEX_SUBAGENT_HINT_LIMIT,
   CODEX_SUBAGENT_HINT_TTL_MS,
   CODEX_TASK_DONE_METHODS,
@@ -49,6 +50,11 @@ import {
   codexTurnIdFromResult,
 } from "@/lib/codex-rpc"
 import {
+  adaptCodexStreamMessage,
+  clearCodexStreamAdapterState,
+} from "@/lib/codex-stream-adapter"
+import { applyStreamActions } from "@/lib/stream-items"
+import {
   type CodexOutputEvent,
   type CodexOutputState,
   createCodexOutputState,
@@ -68,7 +74,17 @@ interface UseCodexRuntimeResult {
   codexThreadAgentIds: MutableRefObject<Map<string, string>>
   connectCodex: (targetUrl: string, opts?: { silent?: boolean }) => void
   requestCodexLoadedList: (hub: CodexHub) => void
+  sendCodexRpcResponse: (
+    agentId: string,
+    requestId: number | string,
+    result: Record<string, unknown>
+  ) => boolean
 }
+
+const CODEX_DEFAULT_THREAD_START_PARAMS = {
+  approvalPolicy: "never",
+  sandbox: "danger-full-access",
+} as const
 
 export function useCodexRuntime({
   agentsRef,
@@ -80,6 +96,12 @@ export function useCodexRuntime({
   const codexThreadAgentIds = useRef(new Map<string, string>())
   const codexOutputStates = useRef(new Map<string, CodexOutputState>())
   const pendingCodexOutputEvents = useRef(new Map<string, CodexOutputEvent[]>())
+
+  const clearCodexAgentRuntimeState = useCallback((agentId: string) => {
+    codexOutputStates.current.delete(agentId)
+    pendingCodexOutputEvents.current.delete(agentId)
+    clearCodexStreamAdapterState(agentId)
+  }, [])
 
   const reduceCodexOutputEvents = useCallback(
     (
@@ -179,6 +201,30 @@ export function useCodexRuntime({
       })
     },
     [queueCodexOutputEvents, reduceCodexOutputEvents, setAgents]
+  )
+
+  const applyCodexStreamMessage = useCallback(
+    (id: string, msg: CodexRpcMessage) => {
+      const actions = adaptCodexStreamMessage(msg, id)
+      if (actions.length === 0) {
+        return
+      }
+      setAgents((prev) => {
+        const agentIndex = prev.findIndex((agent) => agent.id === id)
+        if (agentIndex === -1) {
+          return prev
+        }
+        const agent = prev[agentIndex]
+        const streamItems = applyStreamActions(agent.streamItems, actions)
+        if (streamItems === agent.streamItems) {
+          return prev
+        }
+        const next = prev.slice()
+        next[agentIndex] = { ...agent, streamItems }
+        return next
+      })
+    },
+    [setAgents]
   )
 
   const setAgentThread = useCallback(
@@ -306,6 +352,7 @@ export function useCodexRuntime({
           protocol: "codex",
           status: "connected",
           output: "",
+          streamItems: [],
           threadId,
         }
         setAgents((prev) => [
@@ -321,6 +368,7 @@ export function useCodexRuntime({
         if (isReusableCodexPlaceholder(requestedAgent)) {
           hub.agents.delete(requestedAgentId)
           setAgentStatus(requestedAgentId, "disconnected")
+          clearCodexAgentRuntimeState(requestedAgentId)
         }
       }
 
@@ -346,6 +394,7 @@ export function useCodexRuntime({
     [
       agentsRef,
       consumePendingCodexOutputEvents,
+      clearCodexAgentRuntimeState,
       pushDebugEvent,
       requestCodexThreadMeta,
       setAgentStatus,
@@ -586,6 +635,7 @@ export function useCodexRuntime({
         protocol: "codex",
         status: "connected",
         output: "",
+        streamItems: [],
         threadId,
       }
       pushDebugEvent(
@@ -765,7 +815,11 @@ export function useCodexRuntime({
         return { agentId: turnEventAgent }
       }
 
-      const itemEventAgent = isCodexItemMessage(msg.method)
+      const shouldUseItemFallback =
+        msg.method?.startsWith("item/") ||
+        isCodexItemMessage(msg.method) ||
+        CODEX_STRUCTURED_NOTIFICATION_METHODS.has(msg.method ?? "")
+      const itemEventAgent = shouldUseItemFallback
         ? resolveCodexItemEventAgent(hub, routeTurnId)
         : undefined
       if (itemEventAgent) {
@@ -824,8 +878,9 @@ export function useCodexRuntime({
       }
       hub.agents.delete(agentId)
       setAgentStatus(agentId, "disconnected")
+      clearCodexAgentRuntimeState(agentId)
     },
-    [setAgentStatus]
+    [clearCodexAgentRuntimeState, setAgentStatus]
   )
 
   const applyCodexProjectedOutput = useCallback(
@@ -907,12 +962,13 @@ export function useCodexRuntime({
       }
       if (isPrimaryThread) {
         setAgentStatus(routedAgentId, "disconnected")
+        clearCodexAgentRuntimeState(routedAgentId)
       }
       pushDebugEvent(
         `codex task-done via=${method} agent=${shortId(routedAgentId)} thread=${shortId(doneThreadId)} hub=${hostFromUrl(hub.url)}`
       )
     },
-    [pushDebugEvent, setAgentStatus]
+    [clearCodexAgentRuntimeState, pushDebugEvent, setAgentStatus]
   )
 
   const codexNotificationHandlers = useMemo(
@@ -993,10 +1049,12 @@ export function useCodexRuntime({
       if (!method) {
         return
       }
+      const routedMsg = routeParams ? { ...msg, params: routeParams } : msg
+      applyCodexStreamMessage(routedAgentId, routedMsg)
       const eventThreadId = codexThreadIdFromParams(routeParams)
 
       if (CODEX_OUTPUT_NOTIFICATION_METHODS.has(method)) {
-        applyCodexProjectedOutput(msg, routedAgentId, eventThreadId)
+        applyCodexProjectedOutput(routedMsg, routedAgentId, eventThreadId)
         return
       }
 
@@ -1016,6 +1074,7 @@ export function useCodexRuntime({
       handler(hub, msg, routeParams, routedAgentId, eventThreadId)
     },
     [
+      applyCodexStreamMessage,
       applyCodexProjectedOutput,
       codexNotificationHandlers,
       completeCodexTaskLifecycle,
@@ -1123,11 +1182,13 @@ export function useCodexRuntime({
         "codex/event/exec_command_end",
         "item/reasoning/summaryTextDelta",
         "item/reasoning/summaryPartAdded",
+        "item/reasoning/textDelta",
         "codex/event/agent_reasoning_delta",
         "codex/event/reasoning_content_delta",
         "codex/event/agent_reasoning_section_break",
         "item/started",
         "codex/event/item_started",
+        "codex/event/collab_waiting_begin",
       ])
       if (!quietMethods.has(msg.method ?? "")) {
         pushDebugEvent(
@@ -1226,7 +1287,7 @@ export function useCodexRuntime({
               jsonrpc: "2.0",
               method: "thread/start",
               id: hub.rpcId,
-              params: {},
+              params: CODEX_DEFAULT_THREAD_START_PARAMS,
             })
           )
         } else {
@@ -1280,6 +1341,7 @@ export function useCodexRuntime({
           hub.threadMetaRequested.delete(threadId)
           hub.agents.delete(agentId)
           setAgentStatus(agentId, "disconnected")
+          clearCodexAgentRuntimeState(agentId)
           for (const [turnId, turnAgentId] of hub.turns.entries()) {
             if (turnAgentId === agentId) {
               hub.turns.delete(turnId)
@@ -1337,6 +1399,7 @@ export function useCodexRuntime({
     [
       attachDiscoveredCodexThread,
       bindCodexThreadToAgent,
+      clearCodexAgentRuntimeState,
       findActiveCodexPrimaryAgent,
       findUnassignedCodexHubAgent,
       pushDebugEvent,
@@ -1474,6 +1537,9 @@ export function useCodexRuntime({
         }
 
         if (!hub.reconnectEnabled) {
+          for (const agentId of agentIds) {
+            clearCodexAgentRuntimeState(agentId)
+          }
           setAgents((prev) =>
             prev
               .filter(
@@ -1482,7 +1548,8 @@ export function useCodexRuntime({
                     a.url === targetUrl &&
                     a.protocol === "codex" &&
                     a.status === "connecting" &&
-                    !a.output
+                    !a.output &&
+                    a.streamItems.length === 0
                   )
               )
               .map((a) =>
@@ -1498,6 +1565,7 @@ export function useCodexRuntime({
         // threads again and create fresh tabs instead of reusing by port.
         for (const agentId of agentIds) {
           setAgentStatus(agentId, "disconnected")
+          clearCodexAgentRuntimeState(agentId)
         }
 
         const attemptReconnect = (attempt: number) => {
@@ -1582,6 +1650,7 @@ export function useCodexRuntime({
                 }
                 for (const aid of connectedHub.agents) {
                   setAgentStatus(aid, "disconnected")
+                  clearCodexAgentRuntimeState(aid)
                 }
               }
               attemptReconnect(attempt + 1)
@@ -1595,6 +1664,7 @@ export function useCodexRuntime({
           if (!scheduled) {
             for (const agentId of agentIds) {
               setAgentStatus(agentId, "disconnected")
+              clearCodexAgentRuntimeState(agentId)
             }
             reconnectTimers.delete(targetUrl)
           }
@@ -1608,6 +1678,7 @@ export function useCodexRuntime({
     [
       handleCodexMessage,
       pushDebugEvent,
+      clearCodexAgentRuntimeState,
       requestCodexLoadedList,
       setAgentStatus,
       setAgents,
@@ -1623,6 +1694,7 @@ export function useCodexRuntime({
         protocol: "codex",
         status: "connecting",
         output: "",
+        streamItems: [],
       }
       setAgents((prev) => [...prev, agent])
 
@@ -1637,7 +1709,7 @@ export function useCodexRuntime({
             jsonrpc: "2.0",
             method: "thread/start",
             id: hub.rpcId,
-            params: {},
+            params: CODEX_DEFAULT_THREAD_START_PARAMS,
           })
         )
       }
@@ -1648,7 +1720,15 @@ export function useCodexRuntime({
       // For subsequent agents on a not-yet-initialized hub, queue it:
       if (!hub.initialized && hub.threads.size === 0 && hub.pending.size > 0) {
         // hub is initializing with the first agent, queue this one
+        let waitRetries = 0
+        const maxWaitRetries = 50 // 5 seconds max
         const waitForInit = () => {
+          if (
+            hub.ws.readyState !== WebSocket.OPEN ||
+            waitRetries >= maxWaitRetries
+          ) {
+            return
+          }
           if (hub.initialized) {
             hub.rpcId++
             hub.pending.set(hub.rpcId, { agentId: id, type: "thread_start" })
@@ -1657,10 +1737,11 @@ export function useCodexRuntime({
                 jsonrpc: "2.0",
                 method: "thread/start",
                 id: hub.rpcId,
-                params: {},
+                params: CODEX_DEFAULT_THREAD_START_PARAMS,
               })
             )
           } else {
+            waitRetries++
             setTimeout(waitForInit, 100)
           }
         }
@@ -1686,10 +1767,47 @@ export function useCodexRuntime({
     [getOrCreateCodexHub, spawnCodexThread]
   )
 
+  const sendCodexRpcResponse = useCallback(
+    (
+      agentId: string,
+      requestId: number | string,
+      result: Record<string, unknown>
+    ): boolean => {
+      for (const hub of codexHubs.values()) {
+        if (!hub.agents.has(agentId)) {
+          continue
+        }
+        if (hub.ws.readyState !== WebSocket.OPEN) {
+          pushDebugEvent(
+            `codex approval-drop agent=${shortId(agentId)} reason=ws-not-open`
+          )
+          return false
+        }
+        hub.ws.send(
+          JSON.stringify({
+            jsonrpc: "2.0",
+            id: requestId,
+            result,
+          })
+        )
+        pushDebugEvent(
+          `codex approval-send agent=${shortId(agentId)} request=${String(requestId)}`
+        )
+        return true
+      }
+      pushDebugEvent(
+        `codex approval-drop agent=${shortId(agentId)} reason=no-hub`
+      )
+      return false
+    },
+    [pushDebugEvent]
+  )
+
   return {
     codexOutputStates,
     codexThreadAgentIds,
     connectCodex,
     requestCodexLoadedList,
+    sendCodexRpcResponse,
   }
 }

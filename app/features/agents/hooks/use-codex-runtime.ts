@@ -1585,6 +1585,51 @@ export function useCodexRuntime({
     ]
   )
 
+  const CODEX_KNOWN_SERVER_REQUEST_METHODS = useMemo(
+    () =>
+      new Set([
+        "item/commandExecution/requestApproval",
+        "item/fileChange/requestApproval",
+        "item/tool/requestUserInput",
+      ]),
+    []
+  )
+
+  const routeCodexParsedMessage = useCallback(
+    (hub: CodexHub, msg: CodexRpcMessage) => {
+      if ("id" in msg && ("result" in msg || "error" in msg)) {
+        routeCodexResponse(hub, msg)
+        return
+      }
+      if ("id" in msg && msg.method) {
+        // Server-initiated request: has both id and method.
+        // Route as notification (handles approval requests etc.)
+        routeCodexNotification(hub, msg)
+        // For unknown server requests, send method-not-found error
+        if (!CODEX_KNOWN_SERVER_REQUEST_METHODS.has(msg.method)) {
+          sendCodexPayload(hub, {
+            jsonrpc: "2.0",
+            id: msg.id,
+            error: {
+              code: -32_601,
+              message: `Method not found: ${msg.method}`,
+            },
+          })
+        }
+        return
+      }
+      if (msg.method) {
+        routeCodexNotification(hub, msg)
+      }
+    },
+    [
+      CODEX_KNOWN_SERVER_REQUEST_METHODS,
+      routeCodexResponse,
+      routeCodexNotification,
+      sendCodexPayload,
+    ]
+  )
+
   const handleCodexMessage = useCallback(
     (hub: CodexHub, raw: string) => {
       const buffered = bufferNdjsonChunk(raw, hub.lineBuffer)
@@ -1602,11 +1647,7 @@ export function useCodexRuntime({
         })
         try {
           const msg = JSON.parse(line) as CodexRpcMessage
-          if ("id" in msg && ("result" in msg || "error" in msg)) {
-            routeCodexResponse(hub, msg)
-          } else if (msg.method) {
-            routeCodexNotification(hub, msg)
-          }
+          routeCodexParsedMessage(hub, msg)
         } catch {
           const rawThreadId = parseCodexThreadIdFromRawLine(line)
           if (rawThreadId) {
@@ -1621,8 +1662,7 @@ export function useCodexRuntime({
     [
       attachDiscoveredCodexThread,
       pushDebugEvent,
-      routeCodexResponse,
-      routeCodexNotification,
+      routeCodexParsedMessage,
       trackCodexFrame,
     ]
   )

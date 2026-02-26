@@ -35,10 +35,20 @@ type CodexApprovalNotification =
   | { method: "item/fileChange/outputDelta"; params: Record<string, unknown> }
   | { method: "item/mcpToolCall/progress"; params: Record<string, unknown> }
 
+type CodexAdditionalNotification =
+  | { method: "turn/diff/updated"; params: Record<string, unknown> }
+  | { method: "model/rerouted"; params: Record<string, unknown> }
+  | { method: "deprecationNotice"; params: Record<string, unknown> }
+  | { method: "configWarning"; params: Record<string, unknown> }
+  | { method: "thread/unarchived"; params: Record<string, unknown> }
+  | { method: "thread/status/changed"; params: Record<string, unknown> }
+  | { method: "thread/closed"; params: Record<string, unknown> }
+
 export type CodexKnownNotification =
   | ServerNotification
   | CodexLegacyEventNotification
   | CodexApprovalNotification
+  | CodexAdditionalNotification
 
 export type CodexKnownMethod = CodexKnownNotification["method"]
 

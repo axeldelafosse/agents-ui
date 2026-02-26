@@ -72,6 +72,11 @@ export const CODEX_STRUCTURED_NOTIFICATION_METHOD_LIST = [
   "item/fileChange/requestApproval",
   "item/mcpToolCall/progress",
   "item/tool/requestUserInput",
+  "turn/diff/updated",
+  "model/rerouted",
+  "deprecationNotice",
+  "configWarning",
+  "thread/unarchived",
 ] as const satisfies readonly CodexKnownMethod[]
 export const CODEX_STRUCTURED_NOTIFICATION_METHODS = new Set<string>(
   CODEX_STRUCTURED_NOTIFICATION_METHOD_LIST

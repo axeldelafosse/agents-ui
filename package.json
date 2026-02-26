@@ -3,8 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "concurrently -k -n ws-proxy,next -c blue,green \"node --no-warnings --experimental-strip-types ws-proxy.ts\" \"next dev\"",
-    "proxy": "node --no-warnings --experimental-strip-types ws-proxy.ts",
+    "dev": "next dev",
     "build": "next build",
     "start": "next start",
     "test": "bun test",
@@ -41,7 +40,6 @@
     "@types/ws": "^8.18.1",
     "babel-plugin-react-compiler": "^1.0.0",
     "chromatic": "^15.2.0",
-    "concurrently": "^9.2.1",
     "storybook": "^10.2.13",
     "tailwindcss": "^4.2.1",
     "typescript": "^5.9.3",

@@ -4,11 +4,10 @@
 - Next.js frontend for monitoring and chatting with multiple background agents.
 - Supports two protocols:
 - `claude` via relay WebSocket ports (`server/index.ts`)
-- `codex` via direct app-server WebSocket + local proxy (`ws-proxy.ts`)
+- `codex` via direct app-server WebSocket
 
 ### Key files
 - `app/page.tsx`: main UI, connection lifecycle, discovery, reconnect logic.
-- `ws-proxy.ts`: WebSocket proxy on port `3001` + `/probe` endpoint.
 - `server/index.ts`: Claude relay server (one relay per configured port).
 
 ### Protocol docs
@@ -17,9 +16,8 @@
 
 ### Run locally
 - Install deps: `bun install`
-- Start web + proxy: `bun run dev`
+- Start dev server: `bun run dev`
 - Build check: `bun run build`
-- Start only proxy (debugging): `bun run proxy`
 
 ### Connection model
 - Claude: one WebSocket per agent.

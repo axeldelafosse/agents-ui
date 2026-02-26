@@ -5,17 +5,13 @@ The Codex app-server exposes a WebSocket interface using **JSON-RPC 2.0** over n
 ## Connection model
 
 ```
-Browser ──ws──> ws-proxy (port 3001) ──ws──> codex app-server (port 4500+)
+Browser ──ws──> codex app-server (port 4500+)
 ```
 
-The proxy (`ws-proxy.ts`) is required because the Codex app-server does not support the `perMessageDeflate` WebSocket extension. The proxy disables it when connecting to the backend.
-
-**Proxy URL**: `ws://localhost:3001/?url=ws://<host>:<port>`
-
-The proxy also exposes a port-probe HTTP endpoint for auto-discovery:
+The browser connects directly to the Codex app-server via WebSocket. Port probing for auto-discovery is handled by a Next.js API route:
 
 ```
-GET http://localhost:3001/probe?ports=4500,4501,4502
+GET /api/probe?ports=4500,4501,4502
 Response: [4500, 4502]   (array of open ports)
 ```
 
@@ -370,4 +366,4 @@ On disconnect, the agents-ui:
 
 ## Discovery
 
-The agents-ui probes ports 4500-4509 every 5 seconds using the proxy's `/probe` endpoint. Open ports get a "silent" hub (no thread spawned, `reconnectEnabled: false`). Once the hub receives thread data via notifications, the UI attaches discovered threads to new agent tabs.
+The agents-ui probes ports 4500-4509 every 5 seconds using the `/api/probe` endpoint. Open ports get a "silent" hub (no thread spawned, `reconnectEnabled: false`). Once the hub receives thread data via notifications, the UI attaches discovered threads to new agent tabs.

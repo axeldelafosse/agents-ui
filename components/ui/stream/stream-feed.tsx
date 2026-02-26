@@ -21,6 +21,7 @@ import { StreamThinking } from "./stream-thinking"
 import { StreamToolCall } from "./stream-tool-call"
 import { StreamToolResult } from "./stream-tool-result"
 import { StreamTurnComplete } from "./stream-turn-complete"
+import { StreamTurnDiff } from "./stream-turn-diff"
 import type { StreamApprovalCallbacks, StreamItem } from "./stream-types"
 import { StreamWebSearch } from "./stream-web-search"
 
@@ -125,6 +126,7 @@ export function dedupeUserMessageMirrors(
 const renderStreamItem = ({
   item,
   onApprove,
+  onApproveForSession,
   onDeny,
   onSubmitInput,
 }: StreamRendererProps): React.ReactNode => {
@@ -158,6 +160,7 @@ const renderStreamItem = ({
         <StreamApprovalRequest
           item={item}
           onApprove={onApprove}
+          onApproveForSession={onApproveForSession}
           onDeny={onDeny}
           onSubmitInput={onSubmitInput}
         />
@@ -166,6 +169,8 @@ const renderStreamItem = ({
       return <StreamReviewMode item={item} />
     case "turn_complete":
       return <StreamTurnComplete item={item} />
+    case "turn_diff":
+      return <StreamTurnDiff item={item} />
     case "error":
       return <StreamError item={item} />
     case "status":
@@ -181,6 +186,7 @@ export function StreamFeed({
   items,
   className,
   onApprove,
+  onApproveForSession,
   onDeny,
   onSubmitInput,
 }: StreamFeedProps) {
@@ -219,7 +225,13 @@ export function StreamFeed({
               </li>
             ) : null} */}
             <li className="marker:text-zinc-600">
-              {renderStreamItem({ item, onApprove, onDeny, onSubmitInput })}
+              {renderStreamItem({
+                item,
+                onApprove,
+                onApproveForSession,
+                onDeny,
+                onSubmitInput,
+              })}
             </li>
           </Fragment>
         )

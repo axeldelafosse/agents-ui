@@ -4,9 +4,26 @@ import type {
   ServerNotification,
 } from "@/codex-app-server-schemas"
 import type { JsonValue } from "@/codex-app-server-schemas/serde_json/JsonValue"
+import type { CancelLoginAccountResponse } from "@/codex-app-server-schemas/v2/CancelLoginAccountResponse"
+import type { ConfigReadResponse } from "@/codex-app-server-schemas/v2/ConfigReadResponse"
+import type { ConfigRequirementsReadResponse } from "@/codex-app-server-schemas/v2/ConfigRequirementsReadResponse"
+import type { ConfigWriteResponse } from "@/codex-app-server-schemas/v2/ConfigWriteResponse"
+import type { GetAccountRateLimitsResponse } from "@/codex-app-server-schemas/v2/GetAccountRateLimitsResponse"
+import type { GetAccountResponse } from "@/codex-app-server-schemas/v2/GetAccountResponse"
+import type { ListMcpServerStatusResponse } from "@/codex-app-server-schemas/v2/ListMcpServerStatusResponse"
+import type { LoginAccountResponse } from "@/codex-app-server-schemas/v2/LoginAccountResponse"
+import type { LogoutAccountResponse } from "@/codex-app-server-schemas/v2/LogoutAccountResponse"
+import type { McpServerOauthLoginResponse } from "@/codex-app-server-schemas/v2/McpServerOauthLoginResponse"
+import type { McpServerRefreshResponse } from "@/codex-app-server-schemas/v2/McpServerRefreshResponse"
+import type { ModelListResponse } from "@/codex-app-server-schemas/v2/ModelListResponse"
+import type { ThreadForkResponse } from "@/codex-app-server-schemas/v2/ThreadForkResponse"
+import type { ThreadListResponse } from "@/codex-app-server-schemas/v2/ThreadListResponse"
 import type { ThreadLoadedListResponse } from "@/codex-app-server-schemas/v2/ThreadLoadedListResponse"
 import type { ThreadReadResponse } from "@/codex-app-server-schemas/v2/ThreadReadResponse"
+import type { ThreadResumeResponse } from "@/codex-app-server-schemas/v2/ThreadResumeResponse"
 import type { ThreadStartResponse } from "@/codex-app-server-schemas/v2/ThreadStartResponse"
+import type { ThreadUnsubscribeResponse } from "@/codex-app-server-schemas/v2/ThreadUnsubscribeResponse"
+import type { ThreadUnsubscribeStatus } from "@/codex-app-server-schemas/v2/ThreadUnsubscribeStatus"
 import type { TurnStartResponse } from "@/codex-app-server-schemas/v2/TurnStartResponse"
 
 type CodexLegacyEventType = EventMsg["type"]
@@ -35,10 +52,20 @@ type CodexApprovalNotification =
   | { method: "item/fileChange/outputDelta"; params: Record<string, unknown> }
   | { method: "item/mcpToolCall/progress"; params: Record<string, unknown> }
 
+type CodexAdditionalNotification =
+  | { method: "turn/diff/updated"; params: Record<string, unknown> }
+  | { method: "model/rerouted"; params: Record<string, unknown> }
+  | { method: "deprecationNotice"; params: Record<string, unknown> }
+  | { method: "configWarning"; params: Record<string, unknown> }
+  | { method: "thread/unarchived"; params: Record<string, unknown> }
+  | { method: "thread/status/changed"; params: Record<string, unknown> }
+  | { method: "thread/closed"; params: Record<string, unknown> }
+
 export type CodexKnownNotification =
   | ServerNotification
   | CodexLegacyEventNotification
   | CodexApprovalNotification
+  | CodexAdditionalNotification
 
 export type CodexKnownMethod = CodexKnownNotification["method"]
 
@@ -85,7 +112,7 @@ export type CodexRpcParams = (
   CodexParamCompatibility
 
 type CodexResultCompatibility = {
-  data?: string[]
+  data?: unknown[]
   id?: string
   nextCursor?: string | null
   thread?: { id?: string; preview?: string }
@@ -94,10 +121,26 @@ type CodexResultCompatibility = {
 
 type CodexKnownResult =
   | InitializeResponse
+  | ThreadForkResponse
+  | ThreadListResponse
   | ThreadLoadedListResponse
   | ThreadReadResponse
+  | ThreadResumeResponse
   | ThreadStartResponse
+  | ThreadUnsubscribeResponse
   | TurnStartResponse
+  | CancelLoginAccountResponse
+  | ConfigReadResponse
+  | ConfigRequirementsReadResponse
+  | ConfigWriteResponse
+  | GetAccountRateLimitsResponse
+  | GetAccountResponse
+  | ListMcpServerStatusResponse
+  | LoginAccountResponse
+  | LogoutAccountResponse
+  | McpServerOauthLoginResponse
+  | McpServerRefreshResponse
+  | ModelListResponse
 
 export type CodexRpcResult = (CodexKnownResult | Record<string, unknown>) &
   CodexResultCompatibility
@@ -263,4 +306,20 @@ export function codexThreadPreviewFromResult(
   result?: CodexRpcResult
 ): string | undefined {
   return readTrimmedString(result?.thread?.preview)
+}
+
+const VALID_UNSUBSCRIBE_STATUSES = new Set<string>([
+  "unsubscribed",
+  "notSubscribed",
+  "notLoaded",
+])
+
+export function codexUnsubscribeStatusFromResult(
+  result?: CodexRpcResult
+): ThreadUnsubscribeStatus | undefined {
+  const status = readTrimmedString(result?.status)
+  if (status && VALID_UNSUBSCRIBE_STATUSES.has(status)) {
+    return status as ThreadUnsubscribeStatus
+  }
+  return undefined
 }

@@ -11,6 +11,7 @@ export interface StreamItemComponentProps {
 
 export interface StreamApprovalCallbacks {
   onApprove?: (item: StreamItem) => void
+  onApproveForSession?: (item: StreamItem) => void
   onDeny?: (item: StreamItem) => void
   onSubmitInput?: (item: StreamItem, value: StreamApprovalInputValue) => void
 }

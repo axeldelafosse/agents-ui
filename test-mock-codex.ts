@@ -3,7 +3,7 @@
 // It listens on port 4500 and simulates the Codex JSON-RPC protocol.
 //
 // Realistic mode (default): behaves like the real codex app-server.
-// - Does NOT respond to thread/loaded/list or addConversationListener.
+// - Does NOT respond to thread/loaded/list or addConversationListener (deprecated in v2).
 // - Automatically sends a turn after initialized, without waiting for
 //   thread/start or subscription from the client.
 //
@@ -183,9 +183,9 @@ wss.on("connection", (ws) => {
       return
     }
 
-    // Ignore addConversationListener (real server doesn't support it)
+    // Ignore addConversationListener (deprecated in v2; real server uses auto-subscribe via thread/start)
     if (msg.method === "addConversationListener") {
-      console.log("Ignoring addConversationListener (not supported)")
+      console.log("Ignoring addConversationListener (deprecated in v2)")
       return
     }
 

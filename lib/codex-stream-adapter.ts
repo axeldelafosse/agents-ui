@@ -1886,6 +1886,77 @@ export function adaptCodexMessageToStreamItems(
     return [created.action]
   }
 
+  if (method === "turn/diff/updated") {
+    const diff = readString(readObject(input.params)?.diff) ?? ""
+    const created = createCodexItem(state, "turn_diff", {
+      agentId,
+      status: "complete",
+      threadId,
+      turnId,
+      data: {
+        diff,
+        label: "Turn Diff",
+      },
+    })
+    return [created.action]
+  }
+
+  if (method === "model/rerouted") {
+    const model = readString(input.params?.model) ?? "unknown"
+    const created = createCodexItem(state, "status", {
+      agentId,
+      status: "complete",
+      text: `Model rerouted to: ${model}`,
+      threadId,
+      turnId,
+      data: {
+        model,
+      },
+    })
+    return [created.action]
+  }
+
+  if (method === "deprecationNotice") {
+    const message = readString(input.params?.message) ?? "Deprecation notice"
+    const created = createCodexItem(state, "status", {
+      agentId,
+      status: "complete",
+      text: message,
+      threadId,
+      turnId,
+      data: {
+        level: "warning",
+      },
+    })
+    return [created.action]
+  }
+
+  if (method === "configWarning") {
+    const message = readString(input.params?.message) ?? "Configuration warning"
+    const created = createCodexItem(state, "status", {
+      agentId,
+      status: "complete",
+      text: message,
+      threadId,
+      turnId,
+      data: {
+        level: "warning",
+      },
+    })
+    return [created.action]
+  }
+
+  if (method === "thread/unarchived") {
+    const created = createCodexItem(state, "status", {
+      agentId,
+      status: "complete",
+      text: "Thread unarchived",
+      threadId,
+      turnId,
+    })
+    return [created.action]
+  }
+
   if (
     method === "thread/name/updated" ||
     method === "thread/tokenUsage/updated" ||

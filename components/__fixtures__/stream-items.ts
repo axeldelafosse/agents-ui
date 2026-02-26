@@ -326,6 +326,15 @@ export const streamTurnCompleteItem = createStreamItem("turn_complete", {
   turnId: "turn-001",
 })
 
+export const streamTurnDiffItem = createStreamItem("turn_diff", {
+  data: {
+    diff: "--- a/src/main.ts\n+++ b/src/main.ts\n@@ -1,3 +1,3 @@\n-const greeting = 'hello'\n+const greeting = 'hello world'\n console.log(greeting)",
+    label: "Turn Diff",
+  },
+  id: "codex-turn-diff-1",
+  turnId: "turn-001",
+})
+
 export const streamRawItem = createStreamItem("raw_item", {
   data: {
     method: "item/unknown/customEvent",
@@ -357,6 +366,7 @@ export const streamItemsByType: Record<StreamItemType, StreamItem> = {
   tool_call: streamToolCallItem,
   tool_result: streamToolResultItem,
   turn_complete: streamTurnCompleteItem,
+  turn_diff: streamTurnDiffItem,
   web_search: streamWebSearchItem,
 }
 

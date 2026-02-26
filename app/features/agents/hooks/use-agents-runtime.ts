@@ -290,10 +290,46 @@ function sendClaudeApprovalResponse(
   sendClaudeControlResponse(agentId, { allow, requestId })
 }
 
+type CodexApprovalDecision =
+  | "accept"
+  | "acceptForSession"
+  | "acceptWithExecpolicyAmendment"
+  | "decline"
+  | "cancel"
+
 function sendCodexApprovalResponse(
   agentId: string,
   item: StreamItem,
   allow: boolean,
+  sendCodexRpcResponse: SendCodexRpcResponse,
+  decision?: CodexApprovalDecision
+): void {
+  const requestId = item.data.requestId
+  if (requestId === undefined) {
+    return
+  }
+  const requestMethod =
+    typeof item.data.requestMethod === "string"
+      ? item.data.requestMethod
+      : undefined
+  if (requestMethod === CODEX_USER_INPUT_METHOD) {
+    return
+  }
+  const resolvedDecision = decision ?? (allow ? "accept" : "decline")
+  const resolvedApproved =
+    resolvedDecision === "accept" ||
+    resolvedDecision === "acceptForSession" ||
+    resolvedDecision === "acceptWithExecpolicyAmendment"
+  sendCodexRpcResponse(agentId, requestId as number | string, {
+    decision: resolvedDecision,
+    approved: resolvedApproved,
+  })
+}
+
+function sendCodexApprovalResponseWithDecision(
+  agentId: string,
+  item: StreamItem,
+  decision: CodexApprovalDecision,
   sendCodexRpcResponse: SendCodexRpcResponse
 ): void {
   const requestId = item.data.requestId
@@ -307,9 +343,13 @@ function sendCodexApprovalResponse(
   if (requestMethod === CODEX_USER_INPUT_METHOD) {
     return
   }
+  const approved =
+    decision === "accept" ||
+    decision === "acceptForSession" ||
+    decision === "acceptWithExecpolicyAmendment"
   sendCodexRpcResponse(agentId, requestId as number | string, {
-    decision: allow ? "accept" : "decline",
-    approved: allow,
+    decision,
+    approved,
   })
 }
 
@@ -395,11 +435,22 @@ export function useAgentsRuntime() {
   }, [])
 
   const {
+    archiveCodexThread,
     codexOutputStates,
     codexThreadAgentIds,
+    compactCodexThread,
     connectCodex,
+    forkCodexThread,
+    interruptCodexTurn,
+    listCodexThreads,
     requestCodexLoadedList,
+    resumeCodexThread,
+    rollbackCodexThread,
     sendCodexRpcResponse,
+    setCodexThreadName,
+    steerCodexTurn,
+    threadListResult,
+    unarchiveCodexThread,
   } = useCodexRuntime({
     agentsRef,
     onWsFrame: appendWsFrame,
@@ -607,6 +658,29 @@ export function useAgentsRuntime() {
     [sendClaudeControlResponse, sendCodexRpcResponse]
   )
 
+  const handleApprovalDecision = useCallback(
+    (item: StreamItem, decision: CodexApprovalDecision) => {
+      const agentId = item.agentId
+      if (!agentId) {
+        return
+      }
+      const agent = agentsRef.current.find((a) => a.id === agentId)
+      if (!agent) {
+        return
+      }
+      if (agent.protocol !== "codex") {
+        return
+      }
+      sendCodexApprovalResponseWithDecision(
+        agentId,
+        item,
+        decision,
+        sendCodexRpcResponse
+      )
+    },
+    [sendCodexRpcResponse]
+  )
+
   const handleApprovalInput = useCallback(
     (item: StreamItem, value: StreamApprovalInputValue) => {
       const agentId = item.agentId
@@ -638,15 +712,28 @@ export function useAgentsRuntime() {
     activeOutput,
     activeStreamItems,
     activeTab,
+    agents,
+    archiveCodexThread,
     autoFollow,
     captureEnabled,
+    compactCodexThread,
+    forkCodexThread,
+    handleApprovalDecision,
     handleApprovalInput,
     handleApprovalResponse,
+    interruptCodexTurn,
     lastSavedCaptureAt,
+    listCodexThreads,
+    resumeCodexThread,
+    rollbackCodexThread,
     saveCaptureSnapshot,
     selectedTabId,
+    setCodexThreadName,
     startCapture,
+    steerCodexTurn,
     stopCaptureAndSave,
+    threadListResult,
+    unarchiveCodexThread,
     setAutoFollow,
     setSelectedTabId,
     visibleTabs,

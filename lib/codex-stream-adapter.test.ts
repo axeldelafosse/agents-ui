@@ -1117,4 +1117,45 @@ describe("codex stream adapter", () => {
     const completed = expectComplete(actions.at(-1))
     expect(completed.id).toBe(created.item.id)
   })
+
+  test("maps turn/diff/updated to turn_diff stream item", () => {
+    const state = createCodexStreamAdapterState()
+    const actions = adaptCodexMessageToStreamItems(state, {
+      method: "turn/diff/updated",
+      params: {
+        threadId: "thread-diff",
+        turnId: "turn-diff",
+        diff: "--- a/file.ts\n+++ b/file.ts\n@@ -1 +1 @@\n-old\n+new",
+      },
+    })
+
+    expect(actions).toHaveLength(1)
+    const created = expectCreate(actions[0])
+    expect(created.item).toMatchObject({
+      type: "turn_diff",
+      status: "complete",
+      threadId: "thread-diff",
+      turnId: "turn-diff",
+      data: {
+        diff: "--- a/file.ts\n+++ b/file.ts\n@@ -1 +1 @@\n-old\n+new",
+        label: "Turn Diff",
+      },
+    })
+  })
+
+  test("maps turn/diff/updated with empty diff to turn_diff with empty string", () => {
+    const state = createCodexStreamAdapterState()
+    const actions = adaptCodexMessageToStreamItems(state, {
+      method: "turn/diff/updated",
+      params: {
+        threadId: "thread-diff-empty",
+        turnId: "turn-diff-empty",
+      },
+    })
+
+    expect(actions).toHaveLength(1)
+    const created = expectCreate(actions[0])
+    expect(created.item.type).toBe("turn_diff")
+    expect(created.item.data.diff).toBe("")
+  })
 })

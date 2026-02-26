@@ -4,6 +4,18 @@ import type {
   ServerNotification,
 } from "@/codex-app-server-schemas"
 import type { JsonValue } from "@/codex-app-server-schemas/serde_json/JsonValue"
+import type { CancelLoginAccountResponse } from "@/codex-app-server-schemas/v2/CancelLoginAccountResponse"
+import type { ConfigReadResponse } from "@/codex-app-server-schemas/v2/ConfigReadResponse"
+import type { ConfigRequirementsReadResponse } from "@/codex-app-server-schemas/v2/ConfigRequirementsReadResponse"
+import type { ConfigWriteResponse } from "@/codex-app-server-schemas/v2/ConfigWriteResponse"
+import type { GetAccountRateLimitsResponse } from "@/codex-app-server-schemas/v2/GetAccountRateLimitsResponse"
+import type { GetAccountResponse } from "@/codex-app-server-schemas/v2/GetAccountResponse"
+import type { ListMcpServerStatusResponse } from "@/codex-app-server-schemas/v2/ListMcpServerStatusResponse"
+import type { LoginAccountResponse } from "@/codex-app-server-schemas/v2/LoginAccountResponse"
+import type { LogoutAccountResponse } from "@/codex-app-server-schemas/v2/LogoutAccountResponse"
+import type { McpServerOauthLoginResponse } from "@/codex-app-server-schemas/v2/McpServerOauthLoginResponse"
+import type { McpServerRefreshResponse } from "@/codex-app-server-schemas/v2/McpServerRefreshResponse"
+import type { ModelListResponse } from "@/codex-app-server-schemas/v2/ModelListResponse"
 import type { ThreadForkResponse } from "@/codex-app-server-schemas/v2/ThreadForkResponse"
 import type { ThreadListResponse } from "@/codex-app-server-schemas/v2/ThreadListResponse"
 import type { ThreadLoadedListResponse } from "@/codex-app-server-schemas/v2/ThreadLoadedListResponse"
@@ -114,6 +126,18 @@ type CodexKnownResult =
   | ThreadResumeResponse
   | ThreadStartResponse
   | TurnStartResponse
+  | CancelLoginAccountResponse
+  | ConfigReadResponse
+  | ConfigRequirementsReadResponse
+  | ConfigWriteResponse
+  | GetAccountRateLimitsResponse
+  | GetAccountResponse
+  | ListMcpServerStatusResponse
+  | LoginAccountResponse
+  | LogoutAccountResponse
+  | McpServerOauthLoginResponse
+  | McpServerRefreshResponse
+  | ModelListResponse
 
 export type CodexRpcResult = (CodexKnownResult | Record<string, unknown>) &
   CodexResultCompatibility

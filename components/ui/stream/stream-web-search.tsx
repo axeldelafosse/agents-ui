@@ -3,9 +3,9 @@ import {
   readString,
   readStringArray,
   readValue,
-  StreamItemShell,
   toPrettyJson,
-} from "./stream-item-shell"
+} from "./stream-data"
+import { StreamItemShell } from "./stream-item-shell"
 
 export function StreamWebSearch({ item }: { item: StreamItem }) {
   const sourceItem = readValue(item.data, "item")

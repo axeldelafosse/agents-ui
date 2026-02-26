@@ -1,11 +1,6 @@
 import type { StreamItem } from "@/lib/stream-items"
-import {
-  asRecord,
-  readArray,
-  readString,
-  StreamItemShell,
-  toPrettyJson,
-} from "./stream-item-shell"
+import { asRecord, readArray, readString, toPrettyJson } from "./stream-data"
+import { StreamItemShell } from "./stream-item-shell"
 
 function describeChange(change: unknown, index: number): string {
   if (typeof change === "string" && change.trim().length > 0) {

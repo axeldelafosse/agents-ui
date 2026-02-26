@@ -2,7 +2,6 @@ import { describe, expect, test } from "bun:test"
 
 import {
   adaptCodexMessageToStreamItems,
-  adaptCodexStreamMessage,
   createCodexStreamAdapterState,
 } from "@/lib/codex-stream-adapter"
 import type { StreamItemAction } from "@/lib/stream-items"
@@ -1017,21 +1016,20 @@ describe("codex stream adapter", () => {
   })
 
   test("includes agentId on created items when called with agentId", () => {
-    const actions = adaptCodexStreamMessage(
-      {
-        method: "item/started",
-        params: {
-          threadId: "thread-agent",
-          turnId: "turn-agent",
-          item: {
-            id: "msg-agent-1",
-            type: "agentMessage",
-            text: "hello",
-          },
+    const state = createCodexStreamAdapterState()
+    const actions = adaptCodexMessageToStreamItems(state, {
+      method: "item/started",
+      params: {
+        threadId: "thread-agent",
+        turnId: "turn-agent",
+        item: {
+          id: "msg-agent-1",
+          type: "agentMessage",
+          text: "hello",
         },
       },
-      "agent-test-codex"
-    )
+      agentId: "agent-test-codex",
+    })
 
     const created = expectCreate(actions[0])
     expect(created.item.agentId).toBe("agent-test-codex")

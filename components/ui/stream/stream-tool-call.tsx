@@ -3,10 +3,10 @@ import {
   asRecord,
   readString,
   readValue,
-  StreamItemShell,
   toInlineText,
   toPrettyJson,
-} from "./stream-item-shell"
+} from "./stream-data"
+import { StreamItemShell } from "./stream-item-shell"
 
 function parsePartialJson(input: string): unknown {
   try {

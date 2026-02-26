@@ -1,10 +1,6 @@
 import type { StreamItem } from "@/lib/stream-items"
-import {
-  readString,
-  readValue,
-  StreamItemShell,
-  toPrettyJson,
-} from "./stream-item-shell"
+import { readString, readValue, toPrettyJson } from "./stream-data"
+import { StreamItemShell } from "./stream-item-shell"
 
 export function StreamToolResult({ item }: { item: StreamItem }) {
   const errorText =

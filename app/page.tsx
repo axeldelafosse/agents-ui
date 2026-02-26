@@ -102,7 +102,7 @@ export default function Page() {
             tabs={visibleTabs}
           />
         )}
-        <div className="border-zinc-800 bg-zinc-950 p-4">
+        <div className="mx-auto max-w-3xl bg-zinc-950 p-4">
           {!activeAgent && (
             <Shimmer className="text-sm" duration={2}>
               Looking for background agents

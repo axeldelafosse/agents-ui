@@ -548,7 +548,6 @@ export default function PlaygroundPage() {
   const [capture, setCapture] = useState<ChatCaptureSnapshot | null>(null)
   const [activeTabId, setActiveTabId] = useState<string>(CODEX_TAB_ID)
   const [autoFollow, setAutoFollow] = useState(false)
-  const [captureMessage, setCaptureMessage] = useState<string>("")
   const [items, setItems] = useState<StreamItem[]>(() =>
     loadTranscript(CODEX_TAB_ID, null)
   )
@@ -568,11 +567,6 @@ export default function PlaygroundPage() {
   useEffect(() => {
     const nextCapture = latestChatCapture() ?? null
     setCapture(nextCapture)
-    setCaptureMessage(
-      nextCapture
-        ? `Loaded capture from ${new Date(nextCapture.createdAt).toLocaleString()} (${nextCapture.events.length} WS frames).`
-        : "No saved capture found yet."
-    )
   }, [])
 
   useEffect(() => {
@@ -659,13 +653,7 @@ export default function PlaygroundPage() {
     <main className="min-h-screen">
       <div className="flex flex-wrap items-center justify-between gap-3 p-4">
         <div>
-          <h1 className="font-bold text-lg tracking-tight">
-            Agents Playground
-          </h1>
-          <p className="text-sm text-zinc-400">
-            Fake transcripts for visual QA of stream components.
-          </p>
-          <p className="text-xs text-zinc-500">{captureMessage}</p>
+          <h1 className="font-bold text-lg tracking-tight">Agents UI</h1>
         </div>
         <div className="flex items-center gap-3">
           <p className="text-right text-sm text-zinc-400">
@@ -689,7 +677,7 @@ export default function PlaygroundPage() {
         tabs={tabs}
       />
 
-      <div className="space-y-3 p-4">
+      <div className="mx-auto max-w-3xl space-y-3 p-4">
         <section>
           {items.length > 0 ? (
             <StreamFeed

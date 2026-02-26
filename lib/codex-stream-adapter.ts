@@ -1916,34 +1916,3 @@ export function adaptCodexMessageToStreamItems(
   })
   return [created.action]
 }
-
-const _globalCodexAdapterStates = new Map<string, CodexStreamAdapterState>()
-
-export function clearCodexStreamAdapterState(agentId?: string): void {
-  if (!agentId) {
-    _globalCodexAdapterStates.clear()
-    return
-  }
-  _globalCodexAdapterStates.delete(agentId)
-}
-
-export function adaptCodexStreamMessage(
-  msg: { method?: string; params?: CodexRpcParams; id?: number | string },
-  agentId?: string,
-  options: CodexStreamAdapterOptions = {}
-): StreamItemAction[] {
-  const key = agentId ?? "_default"
-  let state = _globalCodexAdapterStates.get(key)
-  if (!state) {
-    state = createCodexStreamAdapterState()
-    _globalCodexAdapterStates.set(key, state)
-  }
-  return adaptCodexMessageToStreamItems(
-    state,
-    {
-      ...msg,
-      agentId,
-    },
-    options
-  )
-}

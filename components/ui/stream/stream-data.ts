@@ -104,6 +104,90 @@ export const getArray = (
   return Array.isArray(value) ? value : []
 }
 
+export const readValue = (source: unknown, ...keys: string[]): unknown => {
+  if (keys.length === 0) {
+    return undefined
+  }
+  return getValue(source, keys)
+}
+
+export const readString = (
+  source: unknown,
+  ...keys: string[]
+): string | undefined => {
+  if (keys.length === 0) {
+    if (typeof source !== "string") {
+      return undefined
+    }
+    const trimmed = source.trim()
+    return trimmed.length > 0 ? trimmed : undefined
+  }
+  return getString(source, keys)
+}
+
+export const readNumber = (
+  source: unknown,
+  ...keys: string[]
+): number | undefined => {
+  if (keys.length === 0) {
+    if (typeof source === "number") {
+      return Number.isFinite(source) ? source : undefined
+    }
+    if (typeof source === "string" && source.trim().length > 0) {
+      const parsed = Number(source)
+      return Number.isFinite(parsed) ? parsed : undefined
+    }
+    return undefined
+  }
+  return getNumber(source, keys)
+}
+
+export const readBoolean = (
+  source: unknown,
+  ...keys: string[]
+): boolean | undefined => {
+  if (keys.length === 0) {
+    if (typeof source === "boolean") {
+      return source
+    }
+    if (typeof source === "string") {
+      if (source === "true") {
+        return true
+      }
+      if (source === "false") {
+        return false
+      }
+    }
+    return undefined
+  }
+  return getBoolean(source, keys)
+}
+
+export const readArray = (
+  source: unknown,
+  ...keys: string[]
+): unknown[] | undefined => {
+  const value = keys.length > 0 ? getValue(source, keys) : source
+  return Array.isArray(value) ? value : undefined
+}
+
+export const readStringArray = (
+  source: unknown,
+  ...keys: string[]
+): string[] => {
+  const selected = keys.length > 0 ? readValue(source, ...keys) : source
+  if (typeof selected === "string" && selected.trim().length > 0) {
+    return [selected]
+  }
+  if (!Array.isArray(selected)) {
+    return []
+  }
+  return selected.filter(
+    (entry): entry is string =>
+      typeof entry === "string" && entry.trim().length > 0
+  )
+}
+
 export const getMarkdown = (
   source: unknown,
   keys: readonly string[] = DEFAULT_MARKDOWN_KEYS
@@ -165,6 +249,43 @@ export const toDisplayText = (value: unknown): string => {
   } catch {
     return String(value)
   }
+}
+
+export const toPrettyJson = (value: unknown): string => {
+  if (typeof value === "string") {
+    return value
+  }
+  if (value === undefined) {
+    return "undefined"
+  }
+  try {
+    const serialized = JSON.stringify(value, null, 2)
+    return serialized ?? "undefined"
+  } catch {
+    return String(value)
+  }
+}
+
+export const toInlineText = (value: unknown): string | undefined => {
+  if (typeof value === "string" && value.trim().length > 0) {
+    return value
+  }
+  if (typeof value === "number" || typeof value === "boolean") {
+    return String(value)
+  }
+  return undefined
+}
+
+export const formatDuration = (
+  durationMs: number | undefined
+): string | undefined => {
+  if (durationMs === undefined || durationMs < 0) {
+    return undefined
+  }
+  if (durationMs < 1000) {
+    return `${durationMs}ms`
+  }
+  return `${(durationMs / 1000).toFixed(2)}s`
 }
 
 export const formatTime = (item: StreamItem): string | undefined => {

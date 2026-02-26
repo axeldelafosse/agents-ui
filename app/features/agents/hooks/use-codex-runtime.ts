@@ -51,8 +51,9 @@ import {
   codexTurnIdFromResult,
 } from "@/lib/codex-rpc"
 import {
-  adaptCodexStreamMessage,
-  clearCodexStreamAdapterState,
+  adaptCodexMessageToStreamItems,
+  type CodexStreamAdapterState,
+  createCodexStreamAdapterState,
 } from "@/lib/codex-stream-adapter"
 import { applyStreamActions } from "@/lib/stream-items"
 import {
@@ -98,6 +99,9 @@ export function useCodexRuntime({
   "use no memo"
   const codexThreadAgentIds = useRef(new Map<string, string>())
   const codexOutputStates = useRef(new Map<string, CodexOutputState>())
+  const codexStreamAdapterStates = useRef(
+    new Map<string, CodexStreamAdapterState>()
+  )
   const pendingCodexOutputEvents = useRef(new Map<string, CodexOutputEvent[]>())
 
   const trackCodexFrame = useCallback(
@@ -125,8 +129,8 @@ export function useCodexRuntime({
 
   const clearCodexAgentRuntimeState = useCallback((agentId: string) => {
     codexOutputStates.current.delete(agentId)
+    codexStreamAdapterStates.current.delete(agentId)
     pendingCodexOutputEvents.current.delete(agentId)
-    clearCodexStreamAdapterState(agentId)
   }, [])
 
   const reduceCodexOutputEvents = useCallback(
@@ -231,7 +235,14 @@ export function useCodexRuntime({
 
   const applyCodexStreamMessage = useCallback(
     (id: string, msg: CodexRpcMessage) => {
-      const actions = adaptCodexStreamMessage(msg, id)
+      const state =
+        codexStreamAdapterStates.current.get(id) ??
+        createCodexStreamAdapterState()
+      codexStreamAdapterStates.current.set(id, state)
+      const actions = adaptCodexMessageToStreamItems(state, {
+        ...msg,
+        agentId: id,
+      })
       if (actions.length === 0) {
         return
       }

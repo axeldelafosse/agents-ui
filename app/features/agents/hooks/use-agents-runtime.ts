@@ -33,6 +33,7 @@ import type {
 import type { StreamItem } from "@/lib/stream-items"
 
 const CODEX_USER_INPUT_METHOD = "item/tool/requestUserInput"
+const CODEX_DEFAULT_QUESTION_ID_FALLBACK = "response"
 const LIVE_CAPTURE_EVENT_LIMIT = 3000
 
 type StreamApprovalInputValue = string | Record<string, string>
@@ -138,7 +139,7 @@ export function toCodexQuestionAnswers(
   }
 
   if (typeof normalizedInput === "string") {
-    const firstQuestionId = questionIds[0] ?? "response"
+    const firstQuestionId = questionIds[0] ?? CODEX_DEFAULT_QUESTION_ID_FALLBACK
     return {
       [firstQuestionId]: {
         answers: [normalizedInput],

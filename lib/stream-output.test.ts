@@ -131,6 +131,83 @@ describe("codex rendering sequence", () => {
     expect(output).not.toContain("subagent")
     expect(output).not.toContain("---")
   })
+
+  test("dedupes identical adjacent codex text chunks before completion", () => {
+    const output = runCodexSequence([
+      { method: "item/agentMessage/delta", text: "I will inspect the repo." },
+      { method: "item/agentMessage/delta", text: "I will inspect the repo." },
+      { method: "item/completed" },
+    ])
+
+    expect(output).toBe("I will inspect the repo.\n\n")
+  })
+
+  test("dedupes complete-message replay variants after completion", () => {
+    const output = runCodexSequence([
+      {
+        method: "item/agentMessage/delta",
+        sourceMethod: "codex/event/raw_response_item",
+        text: "I will inspect the repo.",
+      },
+      { method: "item/completed" },
+      {
+        method: "item/agentMessage/delta",
+        sourceMethod: "codex/event/agent_message",
+        text: "I will inspect the repo.",
+      },
+      { method: "item/completed" },
+    ])
+
+    expect(output).toBe("I will inspect the repo.\n\n")
+  })
+
+  test("dedupes complete-message replay with trailing newline mismatch", () => {
+    const output = runCodexSequence([
+      {
+        method: "item/agentMessage/delta",
+        sourceMethod: "codex/event/raw_response_item",
+        text: "Plan line.\n",
+      },
+      { method: "item/completed" },
+      {
+        method: "item/agentMessage/delta",
+        sourceMethod: "codex/event/agent_message",
+        text: "Plan line.",
+      },
+      { method: "item/completed" },
+    ])
+
+    expect(output).toBe("Plan line.\n\n")
+  })
+
+  test("dedupes adjacent in-flight chunks with trailing newline mismatch", () => {
+    const output = runCodexSequence([
+      {
+        method: "item/agentMessage/delta",
+        sourceMethod: "codex/event/raw_response_item",
+        text: "In-flight line.\n",
+      },
+      {
+        method: "item/agentMessage/delta",
+        sourceMethod: "codex/event/agent_message",
+        text: "In-flight line.",
+      },
+      { method: "item/completed" },
+    ])
+
+    expect(output).toBe("In-flight line.\n\n")
+  })
+
+  test("allows the same text again after completion", () => {
+    const output = runCodexSequence([
+      { method: "item/agentMessage/delta", text: "Repeated text" },
+      { method: "item/completed" },
+      { method: "item/agentMessage/delta", text: "Repeated text" },
+      { method: "item/completed" },
+    ])
+
+    expect(output).toBe("Repeated text\n\nRepeated text\n\n")
+  })
 })
 
 describe("claude rendering sequence", () => {

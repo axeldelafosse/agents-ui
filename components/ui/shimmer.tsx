@@ -4,6 +4,11 @@ import type { MotionProps } from "motion/react"
 import { motion } from "motion/react"
 import type { CSSProperties, ElementType, JSX } from "react"
 import { memo, useMemo } from "react"
+import {
+  computeShimmerSpread,
+  DEFAULT_SHIMMER_DURATION_SECONDS,
+  DEFAULT_SHIMMER_SPREAD_MULTIPLIER,
+} from "@/components/ui/shimmer-utils"
 import { cn } from "@/lib/utils"
 
 type MotionHTMLProps = MotionProps & Record<string, unknown>
@@ -35,15 +40,15 @@ const ShimmerComponent = ({
   children,
   as: Component = "p",
   className,
-  duration = 2,
-  spread = 2,
+  duration = DEFAULT_SHIMMER_DURATION_SECONDS,
+  spread = DEFAULT_SHIMMER_SPREAD_MULTIPLIER,
 }: TextShimmerProps) => {
   const MotionComponent = getMotionComponent(
     Component as keyof JSX.IntrinsicElements
   )
 
   const dynamicSpread = useMemo(
-    () => (children?.length ?? 0) * spread,
+    () => computeShimmerSpread(children.length, spread),
     [children, spread]
   )
 

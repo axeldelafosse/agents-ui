@@ -2,6 +2,11 @@
 
 import { useCallback, useEffect, useRef, useState } from "react"
 import {
+  latestChatCapture,
+  storeChatCapture,
+  type WsCaptureEvent,
+} from "@/app/features/agents/capture"
+import {
   DEBUG_EVENT_LIMIT,
   DISCOVERY_INTERVAL_MS,
 } from "@/app/features/agents/constants"
@@ -25,13 +30,301 @@ import type {
   Protocol,
   Status,
 } from "@/app/features/agents/types"
+import type { StreamItem } from "@/lib/stream-items"
+
+const CODEX_USER_INPUT_METHOD = "item/tool/requestUserInput"
+const CODEX_DEFAULT_QUESTION_ID_FALLBACK = "response"
+const LIVE_CAPTURE_EVENT_LIMIT = 3000
+
+type StreamApprovalInputValue = string | Record<string, string>
+
+type UnknownRecord = Record<string, unknown>
+
+interface CodexQuestionAnswer {
+  answers: string[]
+}
+
+interface ClaudeControlResponseInputPayload {
+  allow: boolean
+  input?: string | Record<string, string>
+  requestId: string
+  updatedInput?: unknown
+}
+
+type SendClaudeControlResponse = (
+  agentId: string,
+  payload: {
+    allow: boolean
+    input?: string | Record<string, string>
+    requestId: string
+    updatedInput?: unknown
+  }
+) => boolean
+
+type SendCodexRpcResponse = (
+  agentId: string,
+  requestId: number | string,
+  result: Record<string, unknown>
+) => boolean
+
+function asRecord(value: unknown): UnknownRecord | undefined {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return undefined
+  }
+  return value as UnknownRecord
+}
+
+function readString(value: unknown): string | undefined {
+  if (typeof value !== "string") {
+    return undefined
+  }
+  const trimmed = value.trim()
+  return trimmed.length > 0 ? trimmed : undefined
+}
+
+export function readQuestionIds(item: StreamItem): string[] {
+  const rawData = asRecord(item.data)
+  if (!rawData) {
+    return []
+  }
+  const directQuestions = Array.isArray(rawData.questions)
+    ? rawData.questions
+    : []
+  const params = asRecord(rawData.params)
+  const nestedQuestions = Array.isArray(params?.questions)
+    ? params.questions
+    : []
+  const rawQuestions =
+    directQuestions.length > 0 ? directQuestions : nestedQuestions
+  const ids: string[] = []
+  for (const rawQuestion of rawQuestions) {
+    const question = asRecord(rawQuestion)
+    const questionId =
+      readString(question?.id) ?? readString(question?.questionId)
+    if (questionId) {
+      ids.push(questionId)
+    }
+  }
+  return ids
+}
+
+export function normalizeSubmittedInput(
+  input: StreamApprovalInputValue
+): string | Record<string, string> | undefined {
+  if (typeof input === "string") {
+    return readString(input)
+  }
+  const normalizedEntries: [string, string][] = []
+  for (const [key, rawValue] of Object.entries(input)) {
+    const normalizedKey = readString(key)
+    const normalizedValue = readString(rawValue)
+    if (!(normalizedKey && normalizedValue)) {
+      continue
+    }
+    normalizedEntries.push([normalizedKey, normalizedValue])
+  }
+  if (normalizedEntries.length === 0) {
+    return undefined
+  }
+  return Object.fromEntries(normalizedEntries)
+}
+
+export function toCodexQuestionAnswers(
+  input: StreamApprovalInputValue,
+  questionIds: readonly string[]
+): Record<string, CodexQuestionAnswer> {
+  const normalizedInput = normalizeSubmittedInput(input)
+  if (!normalizedInput) {
+    return {}
+  }
+
+  if (typeof normalizedInput === "string") {
+    const firstQuestionId = questionIds[0] ?? CODEX_DEFAULT_QUESTION_ID_FALLBACK
+    return {
+      [firstQuestionId]: {
+        answers: [normalizedInput],
+      },
+    }
+  }
+
+  const responses: Record<string, CodexQuestionAnswer> = {}
+  for (const questionId of questionIds) {
+    const response = readString(normalizedInput[questionId])
+    if (!response) {
+      continue
+    }
+    responses[questionId] = {
+      answers: [response],
+    }
+  }
+
+  if (Object.keys(responses).length > 0) {
+    return responses
+  }
+
+  if (questionIds.length === 0) {
+    for (const [questionId, answer] of Object.entries(normalizedInput)) {
+      responses[questionId] = {
+        answers: [answer],
+      }
+    }
+    return responses
+  }
+
+  const firstQuestionId = questionIds[0]
+  const firstAnswer = Object.values(normalizedInput)[0]
+  if (firstQuestionId && firstAnswer) {
+    responses[firstQuestionId] = {
+      answers: [firstAnswer],
+    }
+  }
+  return responses
+}
+
+export function buildClaudeInputPayload(
+  item: StreamItem,
+  value: StreamApprovalInputValue
+): ClaudeControlResponseInputPayload | undefined {
+  const requestId =
+    typeof item.data.requestId === "string" ? item.data.requestId : undefined
+  if (!requestId) {
+    return undefined
+  }
+
+  const request = asRecord(item.data.request)
+  const requestInput = request?.input
+  const submittedInput = normalizeSubmittedInput(value)
+  const payload: ClaudeControlResponseInputPayload = {
+    allow: true,
+    requestId,
+  }
+
+  if (requestInput !== undefined && submittedInput !== undefined) {
+    if (
+      typeof submittedInput === "string" &&
+      typeof requestInput === "object" &&
+      requestInput !== null &&
+      !Array.isArray(requestInput)
+    ) {
+      payload.updatedInput = {
+        ...(requestInput as UnknownRecord),
+        userInput: submittedInput,
+      }
+    } else if (
+      typeof submittedInput === "object" &&
+      typeof requestInput === "object" &&
+      requestInput !== null &&
+      !Array.isArray(requestInput)
+    ) {
+      payload.updatedInput = {
+        ...(requestInput as UnknownRecord),
+        ...submittedInput,
+      }
+    } else {
+      payload.updatedInput = submittedInput
+    }
+  } else if (submittedInput !== undefined) {
+    payload.updatedInput = submittedInput
+  } else if (requestInput !== undefined) {
+    payload.updatedInput = requestInput
+  }
+
+  if (submittedInput !== undefined) {
+    payload.input = submittedInput
+  }
+
+  return payload
+}
+
+function sendClaudeInputResponse(
+  agentId: string,
+  item: StreamItem,
+  value: StreamApprovalInputValue,
+  sendClaudeControlResponse: SendClaudeControlResponse
+): void {
+  const payload = buildClaudeInputPayload(item, value)
+  if (!payload) {
+    return
+  }
+  sendClaudeControlResponse(agentId, payload)
+}
+
+function sendCodexInputResponse(
+  agentId: string,
+  item: StreamItem,
+  value: StreamApprovalInputValue,
+  sendCodexRpcResponse: SendCodexRpcResponse
+): void {
+  const requestId = item.data.requestId
+  if (requestId === undefined) {
+    return
+  }
+
+  const requestMethod =
+    typeof item.data.requestMethod === "string"
+      ? item.data.requestMethod
+      : undefined
+  const questionIds = readQuestionIds(item)
+  const isInputRequest =
+    requestMethod === CODEX_USER_INPUT_METHOD || questionIds.length > 0
+  if (!isInputRequest) {
+    return
+  }
+  const answers = toCodexQuestionAnswers(value, questionIds)
+  sendCodexRpcResponse(agentId, requestId as number | string, {
+    answers,
+  })
+}
+
+function sendClaudeApprovalResponse(
+  agentId: string,
+  item: StreamItem,
+  allow: boolean,
+  sendClaudeControlResponse: SendClaudeControlResponse
+): void {
+  const requestId =
+    typeof item.data.requestId === "string" ? item.data.requestId : undefined
+  if (!requestId) {
+    return
+  }
+  sendClaudeControlResponse(agentId, { allow, requestId })
+}
+
+function sendCodexApprovalResponse(
+  agentId: string,
+  item: StreamItem,
+  allow: boolean,
+  sendCodexRpcResponse: SendCodexRpcResponse
+): void {
+  const requestId = item.data.requestId
+  if (requestId === undefined) {
+    return
+  }
+  const requestMethod =
+    typeof item.data.requestMethod === "string"
+      ? item.data.requestMethod
+      : undefined
+  if (requestMethod === CODEX_USER_INPUT_METHOD) {
+    return
+  }
+  sendCodexRpcResponse(agentId, requestId as number | string, {
+    decision: allow ? "accept" : "decline",
+    approved: allow,
+  })
+}
 
 export function useAgentsRuntime() {
   const [agents, setAgents] = useState<Agent[]>([])
   const [autoFollow, setAutoFollow] = useState(false)
+  const [captureEnabled, setCaptureEnabled] = useState(false)
   const [_debugEvents, setDebugEvents] = useState<string[]>([])
+  const [lastSavedCaptureAt, setLastSavedCaptureAt] = useState<
+    number | undefined
+  >(() => latestChatCapture()?.createdAt)
   const [selectedTabId, setSelectedTabId] = useState<string | null>(null)
   const agentsRef = useRef<Agent[]>([])
+  const captureEventsRef = useRef<WsCaptureEvent[]>([])
+  const captureEnabledRef = useRef(captureEnabled)
 
   const pushDebugEvent = useCallback((text: string) => {
     if (process.env.NODE_ENV !== "production") {
@@ -47,6 +340,41 @@ export function useAgentsRuntime() {
       })
     }
   }, [])
+
+  const appendWsFrame = useCallback((event: WsCaptureEvent) => {
+    if (!captureEnabledRef.current) {
+      return
+    }
+    captureEventsRef.current.push(event)
+    if (captureEventsRef.current.length > LIVE_CAPTURE_EVENT_LIMIT) {
+      captureEventsRef.current.splice(
+        0,
+        captureEventsRef.current.length - LIVE_CAPTURE_EVENT_LIMIT
+      )
+    }
+  }, [])
+
+  const saveCaptureSnapshot = useCallback((): boolean => {
+    const saved = storeChatCapture(agentsRef.current, captureEventsRef.current)
+    if (!saved) {
+      return false
+    }
+    setLastSavedCaptureAt(saved.createdAt)
+    return true
+  }, [])
+
+  const startCapture = useCallback(() => {
+    captureEventsRef.current = []
+    captureEnabledRef.current = true
+    setCaptureEnabled(true)
+  }, [])
+
+  const stopCaptureAndSave = useCallback(() => {
+    const saved = saveCaptureSnapshot()
+    captureEnabledRef.current = false
+    setCaptureEnabled(false)
+    return saved
+  }, [saveCaptureSnapshot])
 
   const setAgentStatus = useCallback((id: string, status: Status) => {
     setAgents((prev) =>
@@ -71,8 +399,10 @@ export function useAgentsRuntime() {
     codexThreadAgentIds,
     connectCodex,
     requestCodexLoadedList,
+    sendCodexRpcResponse,
   } = useCodexRuntime({
     agentsRef,
+    onWsFrame: appendWsFrame,
     pushDebugEvent,
     setAgentStatus,
     setAgents,
@@ -83,8 +413,10 @@ export function useAgentsRuntime() {
     claudeSessionAgentIds,
     claudeSessionIds,
     connectClaude,
+    sendClaudeControlResponse,
   } = useClaudeRuntime({
     agentsRef,
+    onWsFrame: appendWsFrame,
     pushDebugEvent,
     setAgentStatus,
     setAgents,
@@ -93,6 +425,10 @@ export function useAgentsRuntime() {
   useEffect(() => {
     agentsRef.current = agents
   }, [agents])
+
+  useEffect(() => {
+    captureEnabledRef.current = captureEnabled
+  }, [captureEnabled])
 
   const connectTo = useCallback(
     (
@@ -228,23 +564,89 @@ export function useAgentsRuntime() {
     }
   }, [runDiscovery])
 
-  const { activeAgent, activeHost, activeOutput, activeTab, visibleTabs } =
-    useActiveAgentView({
-      agents,
-      autoFollow,
-      claudeSessionAgentIds,
-      codexThreadAgentIds,
-      selectedTabId,
-      setSelectedTabId,
-    })
+  const {
+    activeAgent,
+    activeHost,
+    activeOutput,
+    activeStreamItems,
+    activeTab,
+    visibleTabs,
+  } = useActiveAgentView({
+    agents,
+    autoFollow,
+    claudeSessionAgentIds,
+    codexThreadAgentIds,
+    selectedTabId,
+    setSelectedTabId,
+  })
+
+  const handleApprovalResponse = useCallback(
+    (item: StreamItem, allow: boolean) => {
+      const agentId = item.agentId
+      if (!agentId) {
+        return
+      }
+      const agent = agentsRef.current.find((a) => a.id === agentId)
+      if (!agent) {
+        return
+      }
+      if (agent.protocol === "claude") {
+        sendClaudeApprovalResponse(
+          agentId,
+          item,
+          allow,
+          sendClaudeControlResponse
+        )
+        return
+      }
+
+      if (agent.protocol === "codex") {
+        sendCodexApprovalResponse(agentId, item, allow, sendCodexRpcResponse)
+      }
+    },
+    [sendClaudeControlResponse, sendCodexRpcResponse]
+  )
+
+  const handleApprovalInput = useCallback(
+    (item: StreamItem, value: StreamApprovalInputValue) => {
+      const agentId = item.agentId
+      if (!agentId) {
+        return
+      }
+      const agent = agentsRef.current.find(
+        (candidate) => candidate.id === agentId
+      )
+      if (!agent) {
+        return
+      }
+
+      if (agent.protocol === "claude") {
+        sendClaudeInputResponse(agentId, item, value, sendClaudeControlResponse)
+        return
+      }
+
+      if (agent.protocol === "codex") {
+        sendCodexInputResponse(agentId, item, value, sendCodexRpcResponse)
+      }
+    },
+    [sendClaudeControlResponse, sendCodexRpcResponse]
+  )
 
   return {
     activeAgent,
     activeHost,
     activeOutput,
+    activeStreamItems,
     activeTab,
     autoFollow,
+    captureEnabled,
+    handleApprovalInput,
+    handleApprovalResponse,
+    lastSavedCaptureAt,
+    saveCaptureSnapshot,
     selectedTabId,
+    startCapture,
+    stopCaptureAndSave,
     setAutoFollow,
     setSelectedTabId,
     visibleTabs,

@@ -7,6 +7,7 @@ import {
   tabIdForAgent,
 } from "@/app/features/agents/tab-utils"
 import type { Agent, AgentTab } from "@/app/features/agents/types"
+import type { StreamItem } from "@/lib/stream-items"
 
 interface UseActiveAgentViewParams {
   agents: Agent[]
@@ -21,6 +22,7 @@ interface UseActiveAgentViewResult {
   activeAgent: Agent | null
   activeHost: string
   activeOutput: string
+  activeStreamItems: StreamItem[]
   activeTab: AgentTab | null
   visibleTabs: AgentTab[]
 }
@@ -106,10 +108,17 @@ export function useActiveAgentView({
     tabIdForAgent(activeTabCanonicalAgent) === activeTab.id
       ? activeTabCanonicalAgent
       : (activeTab?.representative ?? null)
-  const activeOutput =
-    activeAgent?.output ||
-    activeTab?.agents.findLast((agent) => Boolean(agent.output))?.output ||
-    ""
+  const fallbackContentAgent = activeTab?.agents.findLast(
+    (agent) => agent.streamItems.length > 0 || Boolean(agent.output)
+  )
+  const hasActiveStreamItems = (activeAgent?.streamItems.length ?? 0) > 0
+  const activeOutput = activeAgent?.output || fallbackContentAgent?.output || ""
+  let activeStreamItems: StreamItem[] = []
+  if (hasActiveStreamItems) {
+    activeStreamItems = activeAgent?.streamItems ?? []
+  } else if (!activeAgent?.output) {
+    activeStreamItems = fallbackContentAgent?.streamItems ?? []
+  }
 
   const activeHost = activeAgent ? hostFromUrl(activeAgent.url) : ""
 
@@ -117,6 +126,7 @@ export function useActiveAgentView({
     activeAgent,
     activeHost,
     activeOutput,
+    activeStreamItems,
     activeTab,
     visibleTabs,
   }

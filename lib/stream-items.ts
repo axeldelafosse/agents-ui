@@ -127,7 +127,7 @@ function capStreamItems(items: StreamItem[], limit: number): StreamItem[] {
 export function applyStreamItemAction(
   items: readonly StreamItem[],
   action: StreamItemAction,
-  limit = STREAM_ITEM_LIMIT
+  limit: number = STREAM_ITEM_LIMIT
 ): StreamItem[] {
   const normalizedLimit = normalizeLimit(limit)
 
@@ -193,7 +193,7 @@ export function applyStreamItemAction(
 export function applyStreamItemActions(
   items: readonly StreamItem[],
   actions: readonly StreamItemAction[],
-  limit = STREAM_ITEM_LIMIT
+  limit: number = STREAM_ITEM_LIMIT
 ): StreamItem[] {
   let nextItems = [...items]
   for (const action of actions) {

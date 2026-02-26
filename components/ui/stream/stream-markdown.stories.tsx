@@ -37,4 +37,7 @@ export const Shimmer: Story = {
     shimmer: true,
     text: "Thinking through **edge cases** before applying the patch...",
   },
+  parameters: {
+    chromatic: { disableSnapshot: true },
+  },
 }

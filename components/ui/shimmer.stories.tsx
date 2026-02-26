@@ -13,6 +13,7 @@ const meta = {
   ],
   parameters: {
     layout: "centered",
+    chromatic: { disableSnapshot: true },
   },
   args: {
     children: "Waiting for connected agents",

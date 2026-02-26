@@ -3,6 +3,7 @@ import { tcpProbe } from "@/lib/tcp-probe"
 
 const LOCAL_PROBE_HOSTS = ["127.0.0.1", "::1", "localhost"] as const
 const PROBE_TIMEOUT_MS = 500
+const MAX_PORTS = 20
 
 async function probeAnyLocalhost(port: number): Promise<boolean> {
   const checks = await Promise.all(
@@ -18,13 +19,12 @@ export async function GET(request: Request) {
     .split(",")
     .map((s) => Number.parseInt(s, 10))
     .filter((n) => n > 0 && n < 65_536)
+    .slice(0, MAX_PORTS)
 
   const results = await Promise.all(
     ports.map((p) => probeAnyLocalhost(p).then((ok) => (ok ? p : null)))
   )
   const open = results.filter((p): p is number => p !== null)
 
-  return NextResponse.json(open, {
-    headers: { "Access-Control-Allow-Origin": "*" },
-  })
+  return NextResponse.json(open)
 }

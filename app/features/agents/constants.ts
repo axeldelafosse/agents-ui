@@ -85,6 +85,10 @@ export const CODEX_NOOP_NOTIFICATION_METHODS = new Set<string>(
 
 export const CODEX_NON_BUFFERED_TURN_METHOD_LIST = [
   "account/rateLimits/updated",
+  "account/updated",
+  "account/login/completed",
+  "app/list/updated",
+  "mcpServer/oauthLogin/completed",
   "thread/tokenUsage/updated",
   "codex/event/token_count",
   "codex/event/mcp_startup_update",

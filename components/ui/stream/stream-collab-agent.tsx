@@ -17,6 +17,9 @@ export function StreamCollabAgent({ item }: StreamCollabAgentProps) {
     getString(item.data, ["status", "state", "phase", "mode"]) ??
     getString(sourceItem, ["status", "state", "phase", "mode"]) ??
     "active"
+  const prompt =
+    getMarkdown(item.data, ["prompt", "instruction", "task"]) ??
+    getMarkdown(sourceItem, ["prompt", "instruction", "task"])
   const note =
     getMarkdown(item.data, ["summary", "message", "description", "text"]) ??
     getMarkdown(sourceItem, ["summary", "message", "description", "text"])
@@ -33,6 +36,7 @@ export function StreamCollabAgent({ item }: StreamCollabAgentProps) {
       tone="muted"
     >
       <p className="font-medium text-zinc-200">{agentName}</p>
+      {prompt && <p className="font-medium text-zinc-200">{prompt}</p>}
       {note && <StreamMarkdown className="mt-2" text={note} />}
     </StreamItemShell>
   )

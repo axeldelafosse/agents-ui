@@ -1,4 +1,5 @@
 import {
+  getArray,
   getNumber,
   getString,
   getValue,
@@ -12,8 +13,12 @@ interface StreamCommandExecutionProps {
 }
 
 export function StreamCommandExecution({ item }: StreamCommandExecutionProps) {
+  const commandActions = getArray(item.data.item, ["commandActions"])
+    .map((action) => getString(action, ["command"]))
+    .filter((cmd): cmd is string => Boolean(cmd))
   const command =
-    getString(item.data, ["command", "cmd", "input", "line"]) ??
+    (commandActions.length > 0 && commandActions.join(" && ")) ||
+    getString(item.data, ["command", "cmd", "input", "line"]) ||
     "<unknown command>"
   const stdout = getString(item.data, ["stdout", "output", "result"])
   const stderr = getString(item.data, ["stderr", "errorOutput"])

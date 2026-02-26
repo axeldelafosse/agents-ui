@@ -2,6 +2,7 @@
 
 import type { Dispatch, MutableRefObject, SetStateAction } from "react"
 import { useCallback, useRef } from "react"
+import type { WsCaptureEvent } from "@/app/features/agents/capture"
 import { CLAUDE_PRETTY_MODE } from "@/app/features/agents/constants"
 import {
   looksLikeClaudeInitLine,
@@ -39,6 +40,7 @@ import {
 
 interface UseClaudeRuntimeParams {
   agentsRef: MutableRefObject<Agent[]>
+  onWsFrame?: (event: WsCaptureEvent) => void
   pushDebugEvent: (text: string) => void
   setAgentStatus: (id: string, status: Status) => void
   setAgents: Dispatch<SetStateAction<Agent[]>>
@@ -62,6 +64,7 @@ interface UseClaudeRuntimeResult {
 
 export function useClaudeRuntime({
   agentsRef,
+  onWsFrame,
   pushDebugEvent,
   setAgentStatus,
   setAgents,
@@ -73,8 +76,37 @@ export function useClaudeRuntime({
   )
   const claudeConnectionAgentIds = useRef(new Map<string, string>())
   const claudeConnectionOwnedAgents = useRef(new Map<string, Set<string>>())
+  const claudeConnectionUrls = useRef(new Map<string, string>())
   const claudeSessionIds = useRef(new Map<string, string>())
   const claudeSessionAgentIds = useRef(new Map<string, string>())
+
+  const trackClaudeFrame = useCallback(
+    (event: Omit<WsCaptureEvent, "protocol">) => {
+      onWsFrame?.({ ...event, protocol: "claude" })
+    },
+    [onWsFrame]
+  )
+
+  const sendClaudePayload = useCallback(
+    (
+      connectionId: string,
+      ws: WebSocket,
+      payload: unknown,
+      agentId?: string
+    ) => {
+      const rawPayload = JSON.stringify(payload)
+      trackClaudeFrame({
+        agentId,
+        connectionId,
+        direction: "out",
+        payload: rawPayload,
+        timestamp: Date.now(),
+        url: claudeConnectionUrls.current.get(connectionId) ?? "",
+      })
+      ws.send(rawPayload)
+    },
+    [trackClaudeFrame]
+  )
 
   const applyClaudeStreamMessage = useCallback(
     (id: string, msg: ClaudeUIMessage) => {
@@ -189,6 +221,14 @@ export function useClaudeRuntime({
       const currentAgent = agentsRef.current.find(
         (a) => a.id === currentAgentId
       )
+      if (!currentSessionId && currentAgent?.status !== "disconnected") {
+        // First session_id seen for this live connection: bind it to the
+        // existing agent so pre-init prompts and early stream items stay in
+        // the same tab instead of rotating into a duplicate one.
+        claudeConnectionAgentIds.current.set(connectionId, currentAgentId)
+        addToOwnedAgents(connectionId, currentAgentId)
+        return currentAgentId
+      }
       const currentHasContent = Boolean(
         currentAgent?.output || currentAgent?.streamItems.length
       )
@@ -414,8 +454,10 @@ export function useClaudeRuntime({
         )
         return false
       }
-      conn.ws.send(
-        JSON.stringify({
+      sendClaudePayload(
+        connectionId,
+        conn.ws,
+        {
           type: "control_response",
           request_id: payload.requestId,
           permission: { allow: payload.allow },
@@ -423,14 +465,15 @@ export function useClaudeRuntime({
           ...(payload.updatedInput !== undefined && {
             updated_input: payload.updatedInput,
           }),
-        })
+        },
+        agentId
       )
       pushDebugEvent(
         `claude approval-send agent=${shortId(agentId)} request=${shortId(payload.requestId)} allow=${payload.allow}`
       )
       return true
     },
-    [pushDebugEvent, resolveClaudeConnectionId]
+    [pushDebugEvent, resolveClaudeConnectionId, sendClaudePayload]
   )
 
   const handleClaudeFallbackLine = useCallback(
@@ -479,6 +522,13 @@ export function useClaudeRuntime({
         if (!line.trim()) {
           continue
         }
+        trackClaudeFrame({
+          connectionId: id,
+          direction: "in",
+          payload: line,
+          timestamp: Date.now(),
+          url: claudeConnectionUrls.current.get(id) ?? "",
+        })
         try {
           handleClaudeMsg(id, JSON.parse(line) as ClaudeUIMessage)
         } catch {
@@ -486,7 +536,7 @@ export function useClaudeRuntime({
         }
       }
     },
-    [handleClaudeFallbackLine, handleClaudeMsg]
+    [handleClaudeFallbackLine, handleClaudeMsg, trackClaudeFrame]
   )
 
   const connectClaude = useCallback(
@@ -506,6 +556,7 @@ export function useClaudeRuntime({
       claudeConns.set(id, { protocol: "claude", ws })
       claudeConnectionAgentIds.current.set(id, id)
       claudeConnectionOwnedAgents.current.set(id, new Set([id]))
+      claudeConnectionUrls.current.set(id, targetUrl)
 
       ws.onopen = () => {
         setAgentStatus(id, "connected")
@@ -534,6 +585,7 @@ export function useClaudeRuntime({
         if (opts?.silent) {
           claudeConnectionAgentIds.current.delete(id)
           claudeConnectionOwnedAgents.current.delete(id)
+          claudeConnectionUrls.current.delete(id)
           setAgents((prev) => {
             const owned = new Set(ownedAgentIds)
             return prev.map((a) =>
@@ -581,6 +633,7 @@ export function useClaudeRuntime({
             }
             claudeConnectionAgentIds.current.delete(id)
             claudeConnectionOwnedAgents.current.delete(id)
+            claudeConnectionUrls.current.delete(id)
             reconnectTimers.delete(id)
           }
         }

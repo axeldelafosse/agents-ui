@@ -11,6 +11,7 @@ export const CODEX_PENDING_TURN_EVENT_MAX_PER_TURN = 32
 export const CODEX_PENDING_TURN_EVENT_MAX_TOTAL = 256
 export const CODEX_PENDING_OUTPUT_EVENT_MAX = 256
 export const DEBUG_EVENT_LIMIT = 500
+export const DEBUG_MODE = false
 
 // auto-discovery port ranges
 export const CODEX_PORTS = Array.from({ length: 10 }, (_, i) => 4500 + i)
@@ -55,6 +56,7 @@ export const CODEX_STRUCTURED_NOTIFICATION_METHOD_LIST = [
   "item/reasoning/summaryTextDelta",
   "item/reasoning/summaryPartAdded",
   "item/reasoning/textDelta",
+  "codex/event/agent_reasoning",
   "codex/event/agent_reasoning_delta",
   "codex/event/reasoning_content_delta",
   "codex/event/agent_reasoning_section_break",

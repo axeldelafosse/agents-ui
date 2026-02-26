@@ -4,7 +4,11 @@ import {
   adaptClaudeStreamMessage,
   createClaudeStreamAdapterState,
 } from "@/lib/claude-stream-adapter"
-import type { StreamItemAction } from "@/lib/stream-items"
+import {
+  applyStreamActions,
+  type StreamItem,
+  type StreamItemAction,
+} from "@/lib/stream-items"
 
 function expectCreate(
   action: StreamItemAction | undefined
@@ -22,6 +26,20 @@ function expectUpsert(
     throw new Error("Expected upsert action")
   }
   return action
+}
+
+function reduceMessages(messages: readonly object[]): StreamItem[] {
+  let state = createClaudeStreamAdapterState()
+  let items: StreamItem[] = []
+  for (const message of messages) {
+    const result = adaptClaudeStreamMessage(message, state, {
+      agentId: "agent-claude",
+      now: 4000,
+    })
+    state = result.state
+    items = applyStreamActions(items, result.actions)
+  }
+  return items
 }
 
 describe("claude stream adapter", () => {
@@ -283,6 +301,78 @@ describe("claude stream adapter", () => {
       data: {
         blockType: "tool_result",
         content: "{ title: 'Agents UI', url: 'http://localhost:3000/' }",
+        role: "user",
+      },
+    })
+  })
+
+  test("maps plain-string user content into a visible message item", () => {
+    const state = createClaudeStreamAdapterState()
+    const result = adaptClaudeStreamMessage(
+      {
+        type: "user",
+        message: {
+          role: "user",
+          content: "Fix the failing test suite.",
+        },
+        session_id: "sess-user-text",
+      },
+      state,
+      { now: 1810 }
+    )
+
+    expect(result.actions).toHaveLength(1)
+    const upserted = expectUpsert(result.actions[0])
+    expect(upserted.item).toMatchObject({
+      id: "claude:sess-user-text:turn:1:block:0",
+      type: "message",
+      status: "complete",
+      data: {
+        blockType: "text",
+        content: "Fix the failing test suite.",
+        role: "user",
+        text: "Fix the failing test suite.",
+      },
+    })
+  })
+
+  test("preserves first plain-string user prompt across turns", () => {
+    const items = reduceMessages([
+      {
+        type: "user",
+        session_id: "sess-user-prompts",
+        message: {
+          role: "user",
+          content: "First prompt",
+        },
+      },
+      {
+        type: "user",
+        session_id: "sess-user-prompts",
+        message: {
+          role: "user",
+          content: "Second prompt",
+        },
+      },
+    ])
+
+    expect(items).toHaveLength(2)
+    expect(items[0]).toMatchObject({
+      id: "claude:sess-user-prompts:turn:1:block:0",
+      turnId: "claude-turn-1",
+      type: "message",
+      data: {
+        role: "user",
+        text: "First prompt",
+      },
+    })
+    expect(items[1]).toMatchObject({
+      id: "claude:sess-user-prompts:turn:2:block:0",
+      turnId: "claude-turn-2",
+      type: "message",
+      data: {
+        role: "user",
+        text: "Second prompt",
       },
     })
   })
@@ -324,6 +414,153 @@ describe("claude stream adapter", () => {
     })
     const turnComplete = expectCreate(result.actions[1])
     expect(turnComplete.item).toMatchObject({
+      type: "turn_complete",
+      status: "complete",
+    })
+  })
+
+  test("preserves assistant-only messages across multiple turns", () => {
+    const items = reduceMessages([
+      {
+        type: "assistant",
+        session_id: "sess-only-assistant",
+        message: {
+          content: [{ type: "text", text: "First assistant response." }],
+        },
+      },
+      {
+        type: "assistant",
+        session_id: "sess-only-assistant",
+        message: {
+          content: [{ type: "text", text: "Second assistant response." }],
+        },
+      },
+    ])
+
+    expect(items).toHaveLength(2)
+    expect(items[0]).toMatchObject({
+      id: "claude:sess-only-assistant:turn:1:block:0",
+      turnId: "claude-turn-1",
+      type: "message",
+      data: { text: "First assistant response." },
+    })
+    expect(items[1]).toMatchObject({
+      id: "claude:sess-only-assistant:turn:2:block:0",
+      turnId: "claude-turn-2",
+      type: "message",
+      data: { text: "Second assistant response." },
+    })
+  })
+
+  test("starts a new turn after message_stop when message_start is missing", () => {
+    const items = reduceMessages([
+      {
+        type: "stream_event",
+        session_id: "sess-missing-start",
+        event: {
+          type: "content_block_start",
+          content_block_index: 0,
+          content_block: { type: "text" },
+        },
+      },
+      {
+        type: "stream_event",
+        session_id: "sess-missing-start",
+        event: {
+          type: "content_block_delta",
+          content_block_index: 0,
+          delta: { type: "text_delta", text: "First turn text." },
+        },
+      },
+      {
+        type: "stream_event",
+        session_id: "sess-missing-start",
+        event: { type: "message_stop" },
+      },
+      {
+        type: "stream_event",
+        session_id: "sess-missing-start",
+        event: {
+          type: "content_block_start",
+          content_block_index: 0,
+          content_block: { type: "text" },
+        },
+      },
+      {
+        type: "stream_event",
+        session_id: "sess-missing-start",
+        event: {
+          type: "content_block_delta",
+          content_block_index: 0,
+          delta: { type: "text_delta", text: "Second turn text." },
+        },
+      },
+      {
+        type: "stream_event",
+        session_id: "sess-missing-start",
+        event: { type: "message_stop" },
+      },
+    ])
+
+    expect(items).toHaveLength(2)
+    expect(items[0]).toMatchObject({
+      id: "claude:sess-missing-start:turn:1:block:0",
+      turnId: "claude-turn-1",
+      data: { text: "First turn text." },
+    })
+    expect(items[1]).toMatchObject({
+      id: "claude:sess-missing-start:turn:2:block:0",
+      turnId: "claude-turn-2",
+      data: { text: "Second turn text." },
+    })
+  })
+
+  test("keeps assistant completion and result on the same turn after message_stop", () => {
+    const items = reduceMessages([
+      {
+        type: "stream_event",
+        session_id: "sess-reconcile",
+        event: { type: "message_start" },
+      },
+      {
+        type: "stream_event",
+        session_id: "sess-reconcile",
+        event: {
+          type: "content_block_delta",
+          content_block_index: 0,
+          delta: { type: "text_delta", text: "Reconciled text." },
+        },
+      },
+      {
+        type: "stream_event",
+        session_id: "sess-reconcile",
+        event: { type: "message_stop" },
+      },
+      {
+        type: "assistant",
+        session_id: "sess-reconcile",
+        message: {
+          content: [{ type: "text", text: "Reconciled text." }],
+        },
+      },
+      {
+        type: "result",
+        session_id: "sess-reconcile",
+        is_error: false,
+        result: "done",
+      },
+    ])
+
+    expect(items).toHaveLength(2)
+    expect(items[0]).toMatchObject({
+      id: "claude:sess-reconcile:turn:1:block:0",
+      turnId: "claude-turn-1",
+      type: "message",
+      data: { text: "Reconciled text." },
+    })
+    expect(items[1]).toMatchObject({
+      id: "claude:sess-reconcile:turn:1:result",
+      turnId: "claude-turn-1",
       type: "turn_complete",
       status: "complete",
     })

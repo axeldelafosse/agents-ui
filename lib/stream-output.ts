@@ -28,12 +28,15 @@ export interface ClaudeOutputState {
 
 export interface CodexOutputEvent {
   method?: string
+  sourceMethod?: string
   text?: string
   threadId?: string
 }
 
 export interface CodexOutputState {
   activeThreadId?: string
+  lastAssistantDeltaText?: string
+  lastCompletedMessageText?: string
   openAssistantMessage: boolean
   primaryThreadId?: string
 }
@@ -301,6 +304,12 @@ function codexThreadTransition(
   }
 }
 
+const COMPLETE_MESSAGE_SOURCE_METHODS = new Set<string>([
+  "codex/event/agent_message",
+  "codex/event/raw_response_item",
+  "codex/event/user_message",
+])
+
 export function reduceCodexOutput(
   output: string,
   state: CodexOutputState,
@@ -312,10 +321,35 @@ export function reduceCodexOutput(
     if (!normalized) {
       return { output, state }
     }
+    const dedupeText = normalized.trimEnd()
+    const isCompleteMessageReplay =
+      !state.openAssistantMessage &&
+      state.lastCompletedMessageText === dedupeText &&
+      (event.sourceMethod
+        ? COMPLETE_MESSAGE_SOURCE_METHODS.has(event.sourceMethod)
+        : false) &&
+      (!event.threadId || event.threadId === state.activeThreadId)
+    if (isCompleteMessageReplay) {
+      return {
+        output,
+        state: { ...state, lastCompletedMessageText: undefined },
+      }
+    }
+    if (
+      state.openAssistantMessage &&
+      state.lastAssistantDeltaText?.trimEnd() === dedupeText
+    ) {
+      return { output, state }
+    }
     const transition = codexThreadTransition(output, state, event.threadId)
     return {
       output: `${transition.output}${normalized}`,
-      state: { ...transition.state, openAssistantMessage: true },
+      state: {
+        ...transition.state,
+        lastAssistantDeltaText: normalized,
+        lastCompletedMessageText: undefined,
+        openAssistantMessage: true,
+      },
     }
   }
 
@@ -325,7 +359,12 @@ export function reduceCodexOutput(
     }
     return {
       output: options.prettyMode ? appendPrettyMessageBoundary(output) : output,
-      state: { ...state, openAssistantMessage: false },
+      state: {
+        ...state,
+        lastAssistantDeltaText: undefined,
+        lastCompletedMessageText: state.lastAssistantDeltaText?.trimEnd(),
+        openAssistantMessage: false,
+      },
     }
   }
 

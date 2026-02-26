@@ -27,17 +27,51 @@ export interface CodexStreamAdapterInput {
 
 export interface CodexStreamAdapterState {
   activeMessageByThread: Map<string, string>
+  activeMessageByThreadOnly: Map<string, string>
   aggregatedCommandOutputBySourceItem: Map<string, string>
   aggregatedFileChangeDeltaBySourceItem: Map<string, string>
   aggregatedMcpProgressBySourceItem: Map<string, string>
+  aggregatedMessageTextByThread: Map<string, string>
+  latestCommandStreamByTurn: Map<string, string>
+  messageRoleByStreamId: Map<string, MessageRole>
   nextId: number
+  recentCompletedMessageByThread: Map<
+    string,
+    { id: string; role?: MessageRole; text: string; timestamp: number }
+  >
   sourceItemToStreamItem: Map<string, string>
 }
+
+export interface CodexStreamAdapterOptions {
+  now?: () => number
+}
+
+const DUPLICATE_COMPLETION_TEXT_WINDOW_MS = 2000
+const DEDUPE_WHITESPACE_REGEX = /\s+/g
+const MAX_AGGREGATED_MESSAGE_TEXT_ENTRIES = 512
+const MAX_LATEST_COMMAND_STREAM_BY_TURN_ENTRIES = 256
+const MAX_MESSAGE_ROLE_BY_STREAM_ID_ENTRIES = 512
+const MAX_RECENT_COMPLETED_MESSAGE_ENTRIES = 512
+const RECENT_COMPLETED_MESSAGE_TTL_MS = DUPLICATE_COMPLETION_TEXT_WINDOW_MS * 4
 
 type StreamItemCompletionStatus = Extract<
   StreamItemStatus,
   "complete" | "error"
 >
+
+function pruneMapToLimit<K, V>(map: Map<K, V>, maxSize: number): void {
+  if (map.size <= maxSize) {
+    return
+  }
+  let overflow = map.size - maxSize
+  for (const key of map.keys()) {
+    map.delete(key)
+    overflow -= 1
+    if (overflow <= 0) {
+      break
+    }
+  }
+}
 
 function readObject(value: unknown): Record<string, unknown> | undefined {
   if (typeof value !== "object" || value === null) {
@@ -58,6 +92,80 @@ function readArray(value: unknown): unknown[] {
   return Array.isArray(value) ? value : []
 }
 
+function parseJsonObject(value: unknown): Record<string, unknown> | undefined {
+  const direct = readObject(value)
+  if (direct) {
+    return direct
+  }
+  if (typeof value !== "string") {
+    return undefined
+  }
+  const trimmed = value.trim()
+  if (!trimmed) {
+    return undefined
+  }
+  try {
+    return readObject(JSON.parse(trimmed))
+  } catch {
+    return undefined
+  }
+}
+
+function readCommandLikeValue(value: unknown): string | undefined {
+  const direct = readString(value)
+  if (direct) {
+    return direct
+  }
+  if (!Array.isArray(value)) {
+    return undefined
+  }
+  const parts = value.filter(
+    (entry): entry is string => typeof entry === "string"
+  )
+  if (parts.length === 0) {
+    return undefined
+  }
+  const joined = parts.join(" ").trim()
+  return joined || undefined
+}
+
+interface RawExecCommandCall {
+  callId?: string
+  command: string
+  cwd?: string
+}
+
+function readRawExecCommandCall(
+  params?: CodexRpcParams
+): RawExecCommandCall | undefined {
+  const msg = readObject(params?.msg)
+  const item = readObject(msg?.item)
+  if (!item) {
+    return undefined
+  }
+  if (readString(item.type) !== "function_call") {
+    return undefined
+  }
+  if (readString(item.name) !== "exec_command") {
+    return undefined
+  }
+  const argumentsRecord = parseJsonObject(item.arguments)
+  const command =
+    readCommandLikeValue(argumentsRecord?.cmd) ??
+    readCommandLikeValue(argumentsRecord?.command) ??
+    readCommandLikeValue(argumentsRecord?.args) ??
+    readCommandLikeValue(argumentsRecord?.argv)
+  if (!command) {
+    return undefined
+  }
+  return {
+    callId: readString(item.call_id) ?? readString(item.callId),
+    command,
+    cwd:
+      readString(argumentsRecord?.workdir) ?? readString(argumentsRecord?.cwd),
+  }
+}
+
 function stringifyUnknown(value: unknown): string {
   if (typeof value === "string") {
     return value
@@ -72,12 +180,204 @@ function stringifyUnknown(value: unknown): string {
   }
 }
 
+function dedupeTextKey(text: string): string {
+  return text.replace(DEDUPE_WHITESPACE_REGEX, " ").trim()
+}
+
 function threadScopedKey(
   prefix: string,
   threadId?: string,
   turnId?: string
 ): string {
   return `${prefix}:${threadId ?? "-"}:${turnId ?? "-"}`
+}
+
+function commandTurnKey(threadId?: string, turnId?: string): string {
+  return threadScopedKey("command-turn", threadId, turnId)
+}
+
+function messageTurnKey(threadId?: string, turnId?: string): string {
+  return threadScopedKey("msg", threadId, turnId)
+}
+
+function messageThreadOnlyKey(threadId?: string): string {
+  return threadScopedKey("msg", threadId)
+}
+
+function messageGlobalKey(): string {
+  return threadScopedKey("msg", "*", "*")
+}
+
+function findActiveMessageByEquivalentText(
+  state: CodexStreamAdapterState,
+  dedupedText: string
+): string | undefined {
+  const matchedIds = new Set<string>()
+  for (const [key, text] of state.aggregatedMessageTextByThread) {
+    if (dedupeTextKey(text) !== dedupedText) {
+      continue
+    }
+    const byTurn = state.activeMessageByThread.get(key)
+    if (byTurn) {
+      matchedIds.add(byTurn)
+    }
+    const byThreadOnly = state.activeMessageByThreadOnly.get(key)
+    if (byThreadOnly) {
+      matchedIds.add(byThreadOnly)
+    }
+  }
+  if (matchedIds.size !== 1) {
+    return undefined
+  }
+  return matchedIds.values().next().value
+}
+
+function clearActiveMessageReferencesById(
+  state: CodexStreamAdapterState,
+  streamId: string
+): void {
+  for (const [key, id] of state.activeMessageByThread) {
+    if (id === streamId) {
+      state.activeMessageByThread.delete(key)
+    }
+  }
+  for (const [key, id] of state.activeMessageByThreadOnly) {
+    if (id === streamId) {
+      state.activeMessageByThreadOnly.delete(key)
+    }
+  }
+  state.messageRoleByStreamId.delete(streamId)
+}
+
+function clearAggregatedMessageTextByStreamId(
+  state: CodexStreamAdapterState,
+  streamId: string
+): void {
+  for (const key of state.aggregatedMessageTextByThread.keys()) {
+    const byTurn = state.activeMessageByThread.get(key)
+    const byThreadOnly = state.activeMessageByThreadOnly.get(key)
+    if (byTurn === streamId || byThreadOnly === streamId) {
+      state.aggregatedMessageTextByThread.delete(key)
+    }
+  }
+}
+
+function aggregatedMessageTextForStreamId(
+  state: CodexStreamAdapterState,
+  streamId: string
+): string | undefined {
+  let best: string | undefined
+  for (const [key, text] of state.aggregatedMessageTextByThread) {
+    const byTurn = state.activeMessageByThread.get(key)
+    const byThreadOnly = state.activeMessageByThreadOnly.get(key)
+    if (byTurn !== streamId && byThreadOnly !== streamId) {
+      continue
+    }
+    if (!best || text.length > best.length) {
+      best = text
+    }
+  }
+  return best
+}
+
+function recentCompletedMessageForKeys(
+  state: CodexStreamAdapterState,
+  threadId?: string,
+  turnId?: string,
+  nowTimestamp?: number
+):
+  | { id: string; role?: MessageRole; text: string; timestamp: number }
+  | undefined {
+  if (nowTimestamp !== undefined) {
+    for (const [key, recent] of state.recentCompletedMessageByThread) {
+      if (nowTimestamp - recent.timestamp > RECENT_COMPLETED_MESSAGE_TTL_MS) {
+        state.recentCompletedMessageByThread.delete(key)
+      }
+    }
+  }
+  pruneMapToLimit(
+    state.recentCompletedMessageByThread,
+    MAX_RECENT_COMPLETED_MESSAGE_ENTRIES
+  )
+  const byTurn = state.recentCompletedMessageByThread.get(
+    messageTurnKey(threadId, turnId)
+  )
+  const byThread = state.recentCompletedMessageByThread.get(
+    messageThreadOnlyKey(threadId)
+  )
+  const byGlobal = state.recentCompletedMessageByThread.get(messageGlobalKey())
+  const candidates = [byTurn, byThread, byGlobal].filter(
+    (candidate): candidate is NonNullable<typeof candidate> =>
+      candidate !== undefined
+  )
+  if (candidates.length === 0) {
+    return undefined
+  }
+  let latest = candidates[0]
+  for (const candidate of candidates.slice(1)) {
+    if (candidate.timestamp > latest.timestamp) {
+      latest = candidate
+    }
+  }
+  return latest
+}
+
+function setRecentCompletedMessageForKeys(
+  state: CodexStreamAdapterState,
+  threadId: string | undefined,
+  turnId: string | undefined,
+  recent: { id: string; role?: MessageRole; text: string; timestamp: number }
+): void {
+  state.recentCompletedMessageByThread.set(
+    messageTurnKey(threadId, turnId),
+    recent
+  )
+  state.recentCompletedMessageByThread.set(
+    messageThreadOnlyKey(threadId),
+    recent
+  )
+  state.recentCompletedMessageByThread.set(messageGlobalKey(), recent)
+  pruneMapToLimit(
+    state.recentCompletedMessageByThread,
+    MAX_RECENT_COMPLETED_MESSAGE_ENTRIES
+  )
+}
+
+function aggregatedMessageTextForKeys(
+  state: CodexStreamAdapterState,
+  threadId?: string,
+  turnId?: string
+): string | undefined {
+  return (
+    state.aggregatedMessageTextByThread.get(messageTurnKey(threadId, turnId)) ??
+    state.aggregatedMessageTextByThread.get(messageThreadOnlyKey(threadId))
+  )
+}
+
+function setAggregatedMessageTextForKeys(
+  state: CodexStreamAdapterState,
+  threadId: string | undefined,
+  turnId: string | undefined,
+  text: string
+): void {
+  state.aggregatedMessageTextByThread.set(
+    messageTurnKey(threadId, turnId),
+    text
+  )
+  state.aggregatedMessageTextByThread.set(messageThreadOnlyKey(threadId), text)
+  pruneMapToLimit(
+    state.aggregatedMessageTextByThread,
+    MAX_AGGREGATED_MESSAGE_TEXT_ENTRIES
+  )
+}
+
+function clearAggregatedMessageTextForKeys(
+  state: CodexStreamAdapterState,
+  threadId?: string,
+  turnId?: string
+): void {
+  state.aggregatedMessageTextByThread.delete(messageTurnKey(threadId, turnId))
+  state.aggregatedMessageTextByThread.delete(messageThreadOnlyKey(threadId))
 }
 
 function nextCodexItemId(
@@ -106,6 +406,44 @@ interface CodexUserInputQuestion {
   isSecret: boolean
   options: unknown[]
   question?: string
+}
+
+type MessageRole = "assistant" | "user"
+
+const LEGACY_MIRROR_NOTIFICATION_METHODS = new Set([
+  "codex/event/item_started",
+  "codex/event/item_completed",
+  "rawResponseItem/completed",
+  "codex/event/agent_message_delta",
+  "codex/event/agent_message_content_delta",
+  "codex/event/agent_message",
+  "codex/event/agent_reasoning",
+  "codex/event/agent_reasoning_delta",
+  "codex/event/reasoning_content_delta",
+  "codex/event/agent_reasoning_section_break",
+])
+
+function normalizeThreadItemType(threadItemType?: string): string | undefined {
+  const normalized = threadItemType?.trim()
+  if (!normalized) {
+    return undefined
+  }
+  switch (normalized) {
+    case "UserMessage":
+      return "userMessage"
+    case "AgentMessage":
+      return "agentMessage"
+    case "Plan":
+      return "plan"
+    case "Reasoning":
+      return "reasoning"
+    case "WebSearch":
+      return "webSearch"
+    case "ContextCompaction":
+      return "contextCompaction"
+    default:
+      return normalized
+  }
 }
 
 function createCodexItem(
@@ -137,7 +475,9 @@ function createCodexItem(
 }
 
 function mapCodexThreadItemType(threadItemType?: string): StreamItemType {
-  switch (threadItemType) {
+  switch (normalizeThreadItemType(threadItemType)) {
+    case "userMessage":
+      return "message"
     case "agentMessage":
       return "message"
     case "commandExecution":
@@ -179,7 +519,10 @@ function readCommandSourceId(params?: CodexRpcParams): string | undefined {
   return (
     readString(params?.itemId) ??
     readString(params?.id) ??
-    readString(paramsRecord?.call_id)
+    readString(paramsRecord?.call_id) ??
+    readString(paramsRecord?.callId) ??
+    readString(paramsRecord?.process_id) ??
+    readString(paramsRecord?.processId)
   )
 }
 
@@ -193,43 +536,134 @@ function commandSourceKey(
   )
 }
 
+function readRawResponseMessageRole(
+  params?: CodexRpcParams
+): MessageRole | undefined {
+  const msgRecord = readObject(params?.msg)
+  const role =
+    readString(msgRecord?.role) ?? readString(readObject(msgRecord?.item)?.role)
+  if (role === "user") {
+    return "user"
+  }
+  if (role === "assistant") {
+    return "assistant"
+  }
+  return undefined
+}
+
+function messageRoleFromMethod(
+  method: string,
+  params?: CodexRpcParams
+): MessageRole | undefined {
+  if (method === "codex/event/user_message") {
+    return "user"
+  }
+  if (
+    method === "item/agentMessage/delta" ||
+    method === "codex/event/agent_message_delta" ||
+    method === "codex/event/agent_message_content_delta" ||
+    method === "codex/event/agent_message"
+  ) {
+    return "assistant"
+  }
+  if (method === "codex/event/raw_response_item") {
+    return readRawResponseMessageRole(params) ?? "assistant"
+  }
+  return undefined
+}
+
+function messageRoleFromThreadItemType(
+  threadItemType?: string
+): MessageRole | undefined {
+  const normalized = normalizeThreadItemType(threadItemType)
+  if (normalized === "userMessage") {
+    return "user"
+  }
+  if (normalized === "agentMessage") {
+    return "assistant"
+  }
+  return undefined
+}
+
+function extractUserMessageContentText(content: unknown): string {
+  const parts: string[] = []
+  for (const entry of readArray(content)) {
+    const record = readObject(entry)
+    if (!record) {
+      continue
+    }
+    const text =
+      readString(record.text) ??
+      readString(record.name) ??
+      readString(record.path) ??
+      readString(record.image_url) ??
+      readString(record.url)
+    if (text) {
+      parts.push(text)
+    }
+  }
+  return parts.join("\n")
+}
+
+function extractReasoningText(threadItem: Record<string, unknown>): string {
+  const summary = (
+    readArray(threadItem.summary) ??
+    readArray(threadItem.summary_text) ??
+    []
+  )
+    .map((part) => readString(part) ?? "")
+    .filter(Boolean)
+    .join("\n")
+  if (summary) {
+    return summary
+  }
+  return (
+    readArray(threadItem.content) ??
+    readArray(threadItem.raw_content) ??
+    []
+  )
+    .map((part) => readString(part) ?? "")
+    .filter(Boolean)
+    .join("\n")
+}
+
+function extractCommandExecutionText(
+  threadItem: Record<string, unknown>
+): string {
+  const command = readString(threadItem.command)
+  const output = readString(threadItem.aggregatedOutput)
+  if (command && output) {
+    return `$ ${command}\n${output}`
+  }
+  return output ?? (command ? `$ ${command}` : "")
+}
+
 function extractThreadItemText(threadItem: Record<string, unknown>): string {
-  const type = readString(threadItem.type)
-  if (type === "agentMessage" || type === "plan") {
-    return readString(threadItem.text) ?? ""
+  const type = normalizeThreadItemType(readString(threadItem.type))
+  switch (type) {
+    case "agentMessage":
+      return (
+        readString(threadItem.text) ??
+        extractUserMessageContentText(threadItem.content)
+      )
+    case "plan":
+      return readString(threadItem.text) ?? ""
+    case "userMessage":
+      return extractUserMessageContentText(threadItem.content)
+    case "reasoning":
+      return extractReasoningText(threadItem)
+    case "commandExecution":
+      return extractCommandExecutionText(threadItem)
+    case "webSearch":
+      return readString(threadItem.query) ?? ""
+    case "imageView":
+      return readString(threadItem.path) ?? ""
+    case "enteredReviewMode":
+    case "exitedReviewMode":
+      return readString(threadItem.review) ?? ""
+    default:
+      return ""
   }
-  if (type === "reasoning") {
-    const summary = readArray(threadItem.summary)
-      .map((part) => readString(part) ?? "")
-      .filter(Boolean)
-      .join("\n")
-    if (summary) {
-      return summary
-    }
-    const content = readArray(threadItem.content)
-      .map((part) => readString(part) ?? "")
-      .filter(Boolean)
-      .join("\n")
-    return content
-  }
-  if (type === "commandExecution") {
-    const command = readString(threadItem.command)
-    const output = readString(threadItem.aggregatedOutput)
-    if (command && output) {
-      return `$ ${command}\n${output}`
-    }
-    return output ?? (command ? `$ ${command}` : "")
-  }
-  if (type === "webSearch") {
-    return readString(threadItem.query) ?? ""
-  }
-  if (type === "imageView") {
-    return readString(threadItem.path) ?? ""
-  }
-  if (type === "enteredReviewMode" || type === "exitedReviewMode") {
-    return readString(threadItem.review) ?? ""
-  }
-  return ""
 }
 
 function appendSourceItemText(
@@ -242,6 +676,31 @@ function appendSourceItemText(
   const next = existing ? `${existing}${separator}${chunk}` : chunk
   map.set(sourceItemId, next)
   return next
+}
+
+function reconcileIncomingText(
+  existing: string,
+  incoming: string
+): { appendText: string; nextAggregate: string } {
+  if (!incoming) {
+    return { appendText: "", nextAggregate: existing }
+  }
+  if (!existing) {
+    return { appendText: incoming, nextAggregate: incoming }
+  }
+  if (incoming === existing || existing.endsWith(incoming)) {
+    return { appendText: "", nextAggregate: existing }
+  }
+  if (incoming.startsWith(existing)) {
+    return {
+      appendText: incoming.slice(existing.length),
+      nextAggregate: incoming,
+    }
+  }
+  return {
+    appendText: incoming,
+    nextAggregate: `${existing}${incoming}`,
+  }
 }
 
 function normalizeThreadItemData(
@@ -282,6 +741,13 @@ function normalizeThreadItemData(
       server: readString(threadItem.server),
       status: readString(threadItem.status),
       toolName: readString(threadItem.tool),
+    }
+  }
+  const messageRole = messageRoleFromThreadItemType(normalizedType)
+  if (messageRole) {
+    return {
+      ...baseData,
+      role: messageRole,
     }
   }
   return baseData
@@ -357,6 +823,46 @@ function ensureSourceItem(
   actions.push(created.action)
   state.sourceItemToStreamItem.set(sourceItemId, created.id)
   return created.id
+}
+
+function setLatestCommandStreamByTurn(
+  state: CodexStreamAdapterState,
+  threadId: string | undefined,
+  turnId: string | undefined,
+  streamId: string
+): void {
+  state.latestCommandStreamByTurn.set(
+    commandTurnKey(threadId, turnId),
+    streamId
+  )
+  pruneMapToLimit(
+    state.latestCommandStreamByTurn,
+    MAX_LATEST_COMMAND_STREAM_BY_TURN_ENTRIES
+  )
+}
+
+function setMessageRoleByStreamId(
+  state: CodexStreamAdapterState,
+  streamId: string,
+  role: MessageRole
+): void {
+  state.messageRoleByStreamId.set(streamId, role)
+  pruneMapToLimit(
+    state.messageRoleByStreamId,
+    MAX_MESSAGE_ROLE_BY_STREAM_ID_ENTRIES
+  )
+}
+
+function clearLatestCommandStreamByTurnIfMatch(
+  state: CodexStreamAdapterState,
+  threadId: string | undefined,
+  turnId: string | undefined,
+  streamId: string
+): void {
+  const key = commandTurnKey(threadId, turnId)
+  if (state.latestCommandStreamByTurn.get(key) === streamId) {
+    state.latestCommandStreamByTurn.delete(key)
+  }
 }
 
 function handleCodexApprovalRequest(
@@ -479,10 +985,18 @@ function handleCodexApprovalRequest(
 export function createCodexStreamAdapterState(): CodexStreamAdapterState {
   return {
     activeMessageByThread: new Map<string, string>(),
+    activeMessageByThreadOnly: new Map<string, string>(),
     aggregatedCommandOutputBySourceItem: new Map<string, string>(),
     aggregatedFileChangeDeltaBySourceItem: new Map<string, string>(),
+    aggregatedMessageTextByThread: new Map<string, string>(),
     aggregatedMcpProgressBySourceItem: new Map<string, string>(),
+    latestCommandStreamByTurn: new Map<string, string>(),
+    messageRoleByStreamId: new Map<string, MessageRole>(),
     nextId: 0,
+    recentCompletedMessageByThread: new Map<
+      string,
+      { id: string; role?: MessageRole; text: string; timestamp: number }
+    >(),
     sourceItemToStreamItem: new Map<string, string>(),
   }
 }
@@ -490,8 +1004,10 @@ export function createCodexStreamAdapterState(): CodexStreamAdapterState {
 // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: adapter keeps event mapping local and explicit
 export function adaptCodexMessageToStreamItems(
   state: CodexStreamAdapterState,
-  input: CodexStreamAdapterInput
+  input: CodexStreamAdapterInput,
+  options: CodexStreamAdapterOptions = {}
 ): StreamItemAction[] {
+  const now = options.now ?? Date.now
   const method = input.method
   if (!method) {
     return []
@@ -499,7 +1015,8 @@ export function adaptCodexMessageToStreamItems(
 
   const threadId = codexThreadIdFromParams(input.params)
   const turnId = codexTurnIdFromParams(input.params)
-  const threadKey = threadScopedKey("msg", threadId, turnId)
+  const threadKey = messageTurnKey(threadId, turnId)
+  const threadOnlyMessageKey = messageThreadOnlyKey(threadId)
   const agentId = input.agentId
 
   const approvalActions = handleCodexApprovalRequest(
@@ -513,16 +1030,91 @@ export function adaptCodexMessageToStreamItems(
     return approvalActions
   }
 
-  if (method === "item/started" || method === "codex/event/item_started") {
+  if (LEGACY_MIRROR_NOTIFICATION_METHODS.has(method)) {
+    return []
+  }
+
+  if (method === "item/started") {
     const threadItem = readObject(input.params?.item)
     if (!threadItem) {
       return []
     }
     const threadItemId = readString(threadItem.id)
     const threadItemType = readString(threadItem.type)
+    const normalizedThreadItemType = normalizeThreadItemType(threadItemType)
     const itemType = mapCodexThreadItemType(threadItemType)
     const itemText = extractThreadItemText(threadItem)
     const normalizedData = normalizeThreadItemData(threadItem, threadItemType)
+    const messageRole = messageRoleFromThreadItemType(threadItemType)
+    if (itemType === "message" && messageRole === "user" && itemText) {
+      const nowTimestamp = now()
+      const recent = recentCompletedMessageForKeys(
+        state,
+        threadId,
+        turnId,
+        nowTimestamp
+      )
+      const dedupeText = dedupeTextKey(itemText)
+      if (
+        recent &&
+        recent.role === "user" &&
+        recent.text === dedupeText &&
+        nowTimestamp - recent.timestamp <= DUPLICATE_COMPLETION_TEXT_WINDOW_MS
+      ) {
+        if (threadItemId) {
+          state.sourceItemToStreamItem.set(threadItemId, recent.id)
+        }
+        return []
+      }
+    }
+
+    const commandTurnStreamId = state.latestCommandStreamByTurn.get(
+      commandTurnKey(threadId, turnId)
+    )
+    const fallbackCommandSourceId =
+      threadItemType === "commandExecution"
+        ? threadScopedKey("command", threadId, turnId)
+        : undefined
+    const mappedFallbackCommandStreamId =
+      fallbackCommandSourceId &&
+      threadItemId &&
+      state.sourceItemToStreamItem.get(fallbackCommandSourceId)
+    const mergeCommandStreamId =
+      mappedFallbackCommandStreamId ?? commandTurnStreamId
+
+    if (
+      normalizedThreadItemType === "commandExecution" &&
+      mergeCommandStreamId &&
+      threadItemId
+    ) {
+      state.sourceItemToStreamItem.set(threadItemId, mergeCommandStreamId)
+      setLatestCommandStreamByTurn(
+        state,
+        threadId,
+        turnId,
+        mergeCommandStreamId
+      )
+      const actions: StreamItemAction[] = [
+        {
+          type: "update",
+          id: mergeCommandStreamId,
+          patch: {
+            data: {
+              ...normalizedData,
+              ...(itemText ? { text: itemText } : {}),
+              ...(threadItemType ? { title: threadItemType } : {}),
+            },
+            itemId: threadItemId,
+          },
+        },
+      ]
+      const output = readString(threadItem.aggregatedOutput)
+      if (output) {
+        state.aggregatedCommandOutputBySourceItem.set(threadItemId, output)
+      }
+      return actions
+    }
+
     const created = createCodexItem(state, itemType, {
       agentId,
       itemId: threadItemId,
@@ -539,18 +1131,21 @@ export function adaptCodexMessageToStreamItems(
 
     if (threadItemId) {
       state.sourceItemToStreamItem.set(threadItemId, created.id)
-      if (threadItemType === "commandExecution") {
+      if (normalizedThreadItemType === "commandExecution") {
+        setLatestCommandStreamByTurn(state, threadId, turnId, created.id)
         const output = readString(threadItem.aggregatedOutput)
         if (output) {
           state.aggregatedCommandOutputBySourceItem.set(threadItemId, output)
         }
-      } else if (threadItemType === "fileChange") {
+      } else if (itemType === "message" && itemText) {
+        setAggregatedMessageTextForKeys(state, threadId, turnId, itemText)
+      } else if (normalizedThreadItemType === "fileChange") {
         const delta =
           readString(threadItem.delta) ?? readString(threadItem.patch)
         if (delta) {
           state.aggregatedFileChangeDeltaBySourceItem.set(threadItemId, delta)
         }
-      } else if (threadItemType === "mcpToolCall") {
+      } else if (normalizedThreadItemType === "mcpToolCall") {
         const progress = readString(threadItem.message)
         if (progress) {
           state.aggregatedMcpProgressBySourceItem.set(threadItemId, progress)
@@ -559,6 +1154,10 @@ export function adaptCodexMessageToStreamItems(
     }
     if (itemType === "message") {
       state.activeMessageByThread.set(threadKey, created.id)
+      state.activeMessageByThreadOnly.set(threadOnlyMessageKey, created.id)
+      if (messageRole) {
+        setMessageRoleByStreamId(state, created.id, messageRole)
+      }
     }
 
     return [created.action]
@@ -615,10 +1214,12 @@ export function adaptCodexMessageToStreamItems(
 
   if (
     method === "item/reasoning/summaryTextDelta" ||
-    method === "item/reasoning/textDelta" ||
-    method === "codex/event/agent_reasoning_delta" ||
-    method === "codex/event/reasoning_content_delta"
+    method === "item/reasoning/textDelta"
   ) {
+    const delta = codexTextFromParams(input.params)
+    if (!delta) {
+      return []
+    }
     const actions: StreamItemAction[] = []
     const itemId =
       readString(input.params?.itemId) ??
@@ -633,18 +1234,15 @@ export function adaptCodexMessageToStreamItems(
       turnId,
       "Reasoning"
     )
-    const delta = codexTextFromParams(input.params)
-    if (!delta) {
-      return actions
-    }
-    actions.push({ type: "append_text", id: streamId, text: delta })
+    actions.push({
+      type: "append_text",
+      id: streamId,
+      text: delta,
+    })
     return actions
   }
 
-  if (
-    method === "item/reasoning/summaryPartAdded" ||
-    method === "codex/event/agent_reasoning_section_break"
-  ) {
+  if (method === "item/reasoning/summaryPartAdded") {
     const actions: StreamItemAction[] = []
     const itemId =
       readString(input.params?.itemId) ??
@@ -676,67 +1274,196 @@ export function adaptCodexMessageToStreamItems(
 
   if (
     method === "item/agentMessage/delta" ||
-    method === "codex/event/agent_message_delta" ||
-    method === "codex/event/agent_message_content_delta" ||
-    method === "codex/event/agent_message" ||
-    method === "codex/event/raw_response_item" ||
-    method === "codex/event/user_message"
+    method === "codex/event/user_message" ||
+    method === "codex/event/raw_response_item"
   ) {
     const isRawResponseItem = method === "codex/event/raw_response_item"
-    const text = isRawResponseItem
-      ? codexTextFromRawParams(input.params) ||
-        codexTextFromParams(input.params)
-      : codexTextFromParams(input.params)
-    if (!text) {
-      if (isRawResponseItem) {
-        const created = createCodexItem(state, "raw_item", {
+    if (isRawResponseItem) {
+      const rawExecCommand = readRawExecCommandCall(input.params)
+      if (rawExecCommand) {
+        const sourceId =
+          rawExecCommand.callId ??
+          commandSourceKey(input.params, threadId, turnId)
+        const existing = state.sourceItemToStreamItem.get(sourceId)
+        if (existing) {
+          setLatestCommandStreamByTurn(state, threadId, turnId, existing)
+          return [
+            {
+              type: "update",
+              id: existing,
+              patch: {
+                data: {
+                  command: rawExecCommand.command,
+                  ...(rawExecCommand.cwd ? { cwd: rawExecCommand.cwd } : {}),
+                },
+              },
+            },
+          ]
+        }
+        const created = createCodexItem(state, "command_execution", {
           agentId,
-          status: "complete",
+          itemId: sourceId,
+          text: `$ ${rawExecCommand.command}\n`,
           threadId,
-          title: method,
+          title: "Command",
           turnId,
           data: {
-            method,
-            params: input.params,
-            requestId: input.id,
+            callId: rawExecCommand.callId,
+            command: rawExecCommand.command,
+            ...(rawExecCommand.cwd ? { cwd: rawExecCommand.cwd } : {}),
           },
         })
+        state.sourceItemToStreamItem.set(sourceId, created.id)
+        setLatestCommandStreamByTurn(state, threadId, turnId, created.id)
         return [created.action]
       }
       return []
     }
+    const isCompleteMessageEvent = method === "codex/event/user_message"
+    const text =
+      method === "codex/event/user_message"
+        ? codexTextFromRawParams(input.params) ||
+          codexTextFromParams(input.params)
+        : codexTextFromParams(input.params)
+    const messageRole = messageRoleFromMethod(method, input.params)
+    if (!text) {
+      return []
+    }
+
+    const dedupeText = dedupeTextKey(text)
+    if (isCompleteMessageEvent && messageRole) {
+      const nowTimestamp = now()
+      const recent = recentCompletedMessageForKeys(
+        state,
+        threadId,
+        turnId,
+        nowTimestamp
+      )
+      if (
+        recent &&
+        recent.role === messageRole &&
+        recent.text === dedupeText &&
+        nowTimestamp - recent.timestamp <= DUPLICATE_COMPLETION_TEXT_WINDOW_MS
+      ) {
+        return []
+      }
+    }
 
     const actions: StreamItemAction[] = []
     let streamId = state.activeMessageByThread.get(threadKey)
+    if (!streamId && isCompleteMessageEvent) {
+      streamId = state.activeMessageByThreadOnly.get(threadOnlyMessageKey)
+    }
+    if (
+      !streamId &&
+      isCompleteMessageEvent &&
+      !threadId &&
+      !turnId &&
+      messageRole === "user"
+    ) {
+      streamId = findActiveMessageByEquivalentText(state, dedupeText)
+    }
     if (!streamId) {
       const created = createCodexItem(state, "message", {
         agentId,
+        data: messageRole ? { role: messageRole } : undefined,
         threadId,
         turnId,
       })
       streamId = created.id
       state.activeMessageByThread.set(threadKey, streamId)
+      state.activeMessageByThreadOnly.set(threadOnlyMessageKey, streamId)
+      if (messageRole) {
+        setMessageRoleByStreamId(state, streamId, messageRole)
+      }
       actions.push(created.action)
     }
 
-    actions.push({ type: "append_text", id: streamId, text })
+    let existingMessageText =
+      aggregatedMessageTextForKeys(state, threadId, turnId) ?? ""
+    if (!existingMessageText && streamId) {
+      existingMessageText =
+        aggregatedMessageTextForStreamId(state, streamId) ?? ""
+    }
+    const isWhitespaceEquivalentCompletion =
+      isCompleteMessageEvent &&
+      Boolean(existingMessageText) &&
+      dedupeTextKey(existingMessageText) === dedupeText
+    if (!isWhitespaceEquivalentCompletion) {
+      const reconciled = reconcileIncomingText(existingMessageText, text)
+      setAggregatedMessageTextForKeys(
+        state,
+        threadId,
+        turnId,
+        reconciled.nextAggregate
+      )
+      if (reconciled.appendText) {
+        actions.push({
+          type: "append_text",
+          id: streamId,
+          text: reconciled.appendText,
+        })
+      }
+    }
 
-    if (
-      method === "codex/event/agent_message" ||
-      isRawResponseItem ||
-      method === "codex/event/user_message"
-    ) {
+    if (isCompleteMessageEvent) {
       actions.push({ type: "complete", id: streamId })
-      state.activeMessageByThread.delete(threadKey)
+      clearAggregatedMessageTextByStreamId(state, streamId)
+      clearActiveMessageReferencesById(state, streamId)
+      setRecentCompletedMessageForKeys(state, threadId, turnId, {
+        id: streamId,
+        role: messageRole,
+        text: dedupeText,
+        timestamp: now(),
+      })
+      clearAggregatedMessageTextForKeys(state, threadId, turnId)
     }
 
     return actions
   }
 
   if (method === "codex/event/exec_command_begin") {
-    const command =
-      codexCommandFromParams(input.params) ?? "(command unavailable)"
+    const command = codexCommandFromParams(input.params)
+    if (!command) {
+      return []
+    }
     const sourceId = commandSourceKey(input.params, threadId, turnId)
+    const existing = state.sourceItemToStreamItem.get(sourceId)
+    if (existing) {
+      setLatestCommandStreamByTurn(state, threadId, turnId, existing)
+      return [
+        {
+          type: "update",
+          id: existing,
+          patch: {
+            data: {
+              command,
+            },
+          },
+        },
+      ]
+    }
+    const explicitSourceId = readCommandSourceId(input.params)
+    if (!explicitSourceId) {
+      const latestForTurn = state.latestCommandStreamByTurn.get(
+        commandTurnKey(threadId, turnId)
+      )
+      if (latestForTurn) {
+        state.sourceItemToStreamItem.set(sourceId, latestForTurn)
+        setLatestCommandStreamByTurn(state, threadId, turnId, latestForTurn)
+        return [
+          {
+            type: "update",
+            id: latestForTurn,
+            patch: {
+              data: {
+                command,
+              },
+            },
+          },
+        ]
+      }
+    }
     const created = createCodexItem(state, "command_execution", {
       agentId,
       itemId: sourceId,
@@ -749,6 +1476,7 @@ export function adaptCodexMessageToStreamItems(
       },
     })
     state.sourceItemToStreamItem.set(sourceId, created.id)
+    setLatestCommandStreamByTurn(state, threadId, turnId, created.id)
     return [created.action]
   }
 
@@ -771,6 +1499,7 @@ export function adaptCodexMessageToStreamItems(
         command: codexCommandFromParams(input.params),
       }
     )
+    setLatestCommandStreamByTurn(state, threadId, turnId, streamId)
     const delta = codexTextFromParams(input.params)
     if (!delta) {
       return actions
@@ -814,6 +1543,7 @@ export function adaptCodexMessageToStreamItems(
         command: codexCommandFromParams(input.params),
       }
     )
+    setLatestCommandStreamByTurn(state, threadId, turnId, streamId)
     const paramsRecord = readObject(input.params)
     const stdin = readString(input.params?.stdin)
     const interactionText = readString(input.params?.text)
@@ -952,6 +1682,9 @@ export function adaptCodexMessageToStreamItems(
     const streamId = state.sourceItemToStreamItem.get(sourceId)
     const status = codexStatusFromParams(input.params)
     const exitCode = codexExitCodeFromParams(input.params)
+    const command = codexCommandFromParams(input.params)
+    const aggregatedOutput =
+      state.aggregatedCommandOutputBySourceItem.get(sourceId)
     const completionText = [
       status ? `status=${status}` : undefined,
       typeof exitCode === "number" ? `exit=${exitCode}` : undefined,
@@ -961,21 +1694,25 @@ export function adaptCodexMessageToStreamItems(
     const actions: StreamItemAction[] = []
     let targetId = streamId
     if (!targetId) {
-      const command =
-        codexCommandFromParams(input.params) ?? "(command unavailable)"
+      if (!(command || aggregatedOutput)) {
+        return []
+      }
       const created = createCodexItem(state, "command_execution", {
         agentId,
         itemId: sourceId,
-        text: `$ ${command}\n`,
+        text: command ? `$ ${command}\n` : undefined,
         threadId,
         title: "Command",
         turnId,
-        data: { command },
+        data: {
+          ...(command ? { command } : {}),
+        },
       })
       targetId = created.id
       state.sourceItemToStreamItem.set(sourceId, targetId)
       actions.push(created.action)
     }
+    setLatestCommandStreamByTurn(state, threadId, turnId, targetId)
     if (completionText) {
       actions.push({
         type: "append_text",
@@ -989,20 +1726,17 @@ export function adaptCodexMessageToStreamItems(
       patch: {
         data: {
           exitCode,
-          output: state.aggregatedCommandOutputBySourceItem.get(sourceId),
+          output: aggregatedOutput,
           status,
         },
       },
     })
     state.aggregatedCommandOutputBySourceItem.delete(sourceId)
+    clearLatestCommandStreamByTurnIfMatch(state, threadId, turnId, targetId)
     return actions
   }
 
-  if (
-    method === "item/completed" ||
-    method === "codex/event/item_completed" ||
-    method === "rawResponseItem/completed"
-  ) {
+  if (method === "item/completed") {
     const actions: StreamItemAction[] = []
     const threadItemId = readThreadItemId(input.params)
     const threadItem = readObject(input.params?.item)
@@ -1013,7 +1747,9 @@ export function adaptCodexMessageToStreamItems(
     const completionData = threadItem
       ? completionDataForThreadItem(threadItem, threadItemType)
       : undefined
-    const activeMessageId = state.activeMessageByThread.get(threadKey)
+    const activeMessageId =
+      state.activeMessageByThread.get(threadKey) ??
+      state.activeMessageByThreadOnly.get(threadOnlyMessageKey)
     let completedTargetItem = false
 
     if (threadItemId) {
@@ -1037,7 +1773,25 @@ export function adaptCodexMessageToStreamItems(
         actions.push(completionAction)
         completedTargetItem = true
         if (activeMessageId === mapped) {
-          state.activeMessageByThread.delete(threadKey)
+          const completedMessageText = aggregatedMessageTextForStreamId(
+            state,
+            mapped
+          )
+          const completedMessageRole = state.messageRoleByStreamId.get(mapped)
+          if (completedMessageText && completedMessageRole) {
+            setRecentCompletedMessageForKeys(state, threadId, turnId, {
+              id: mapped,
+              role: completedMessageRole,
+              text: dedupeTextKey(completedMessageText),
+              timestamp: now(),
+            })
+          }
+          clearAggregatedMessageTextByStreamId(state, mapped)
+          clearActiveMessageReferencesById(state, mapped)
+          clearAggregatedMessageTextForKeys(state, threadId, turnId)
+        }
+        if (threadItemType === "commandExecution") {
+          clearLatestCommandStreamByTurnIfMatch(state, threadId, turnId, mapped)
         }
       } else if (threadItem) {
         const completedType = mapCodexThreadItemType(threadItemType)
@@ -1054,6 +1808,14 @@ export function adaptCodexMessageToStreamItems(
         actions.push(created.action)
         state.sourceItemToStreamItem.set(threadItemId, created.id)
         completedTargetItem = true
+        if (threadItemType === "commandExecution") {
+          clearLatestCommandStreamByTurnIfMatch(
+            state,
+            threadId,
+            turnId,
+            created.id
+          )
+        }
       }
       state.aggregatedCommandOutputBySourceItem.delete(threadItemId)
       state.aggregatedFileChangeDeltaBySourceItem.delete(threadItemId)
@@ -1061,23 +1823,24 @@ export function adaptCodexMessageToStreamItems(
     }
 
     if (activeMessageId && !completedTargetItem) {
+      const completedMessageText = aggregatedMessageTextForStreamId(
+        state,
+        activeMessageId
+      )
+      const completedMessageRole =
+        state.messageRoleByStreamId.get(activeMessageId)
+      if (completedMessageText && completedMessageRole) {
+        setRecentCompletedMessageForKeys(state, threadId, turnId, {
+          id: activeMessageId,
+          role: completedMessageRole,
+          text: dedupeTextKey(completedMessageText),
+          timestamp: now(),
+        })
+      }
       actions.push({ type: "complete", id: activeMessageId })
-      state.activeMessageByThread.delete(threadKey)
-    }
-
-    if (actions.length === 0 && method === "rawResponseItem/completed") {
-      const created = createCodexItem(state, "raw_item", {
-        agentId,
-        status: completionStatus ?? "complete",
-        threadId,
-        title: method,
-        turnId,
-        data: {
-          method,
-          params: input.params,
-        },
-      })
-      actions.push(created.action)
+      clearAggregatedMessageTextByStreamId(state, activeMessageId)
+      clearActiveMessageReferencesById(state, activeMessageId)
+      clearAggregatedMessageTextForKeys(state, threadId, turnId)
     }
 
     return actions
@@ -1166,7 +1929,8 @@ export function clearCodexStreamAdapterState(agentId?: string): void {
 
 export function adaptCodexStreamMessage(
   msg: { method?: string; params?: CodexRpcParams; id?: number | string },
-  agentId?: string
+  agentId?: string,
+  options: CodexStreamAdapterOptions = {}
 ): StreamItemAction[] {
   const key = agentId ?? "_default"
   let state = _globalCodexAdapterStates.get(key)
@@ -1174,8 +1938,12 @@ export function adaptCodexStreamMessage(
     state = createCodexStreamAdapterState()
     _globalCodexAdapterStates.set(key, state)
   }
-  return adaptCodexMessageToStreamItems(state, {
-    ...msg,
-    agentId,
-  })
+  return adaptCodexMessageToStreamItems(
+    state,
+    {
+      ...msg,
+      agentId,
+    },
+    options
+  )
 }

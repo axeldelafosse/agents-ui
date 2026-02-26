@@ -39,6 +39,8 @@ export function StreamTurnComplete({ item }: StreamTurnCompleteProps) {
     metaParts.push(`$${cost.toFixed(4)}`)
   }
 
+  return null
+
   return (
     <div className="relative flex items-center gap-3 py-2">
       <span className="h-px grow bg-emerald-900/50" />

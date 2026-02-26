@@ -2,6 +2,11 @@
 
 import { useCallback, useEffect, useRef, useState } from "react"
 import {
+  latestChatCapture,
+  storeChatCapture,
+  type WsCaptureEvent,
+} from "@/app/features/agents/capture"
+import {
   DEBUG_EVENT_LIMIT,
   DISCOVERY_INTERVAL_MS,
 } from "@/app/features/agents/constants"
@@ -28,6 +33,7 @@ import type {
 import type { StreamItem } from "@/lib/stream-items"
 
 const CODEX_USER_INPUT_METHOD = "item/tool/requestUserInput"
+const LIVE_CAPTURE_EVENT_LIMIT = 3000
 
 type StreamApprovalInputValue = string | Record<string, string>
 
@@ -309,9 +315,15 @@ function sendCodexApprovalResponse(
 export function useAgentsRuntime() {
   const [agents, setAgents] = useState<Agent[]>([])
   const [autoFollow, setAutoFollow] = useState(false)
+  const [captureEnabled, setCaptureEnabled] = useState(false)
   const [_debugEvents, setDebugEvents] = useState<string[]>([])
+  const [lastSavedCaptureAt, setLastSavedCaptureAt] = useState<
+    number | undefined
+  >(() => latestChatCapture()?.createdAt)
   const [selectedTabId, setSelectedTabId] = useState<string | null>(null)
   const agentsRef = useRef<Agent[]>([])
+  const captureEventsRef = useRef<WsCaptureEvent[]>([])
+  const captureEnabledRef = useRef(captureEnabled)
 
   const pushDebugEvent = useCallback((text: string) => {
     if (process.env.NODE_ENV !== "production") {
@@ -327,6 +339,41 @@ export function useAgentsRuntime() {
       })
     }
   }, [])
+
+  const appendWsFrame = useCallback((event: WsCaptureEvent) => {
+    if (!captureEnabledRef.current) {
+      return
+    }
+    captureEventsRef.current.push(event)
+    if (captureEventsRef.current.length > LIVE_CAPTURE_EVENT_LIMIT) {
+      captureEventsRef.current.splice(
+        0,
+        captureEventsRef.current.length - LIVE_CAPTURE_EVENT_LIMIT
+      )
+    }
+  }, [])
+
+  const saveCaptureSnapshot = useCallback((): boolean => {
+    const saved = storeChatCapture(agentsRef.current, captureEventsRef.current)
+    if (!saved) {
+      return false
+    }
+    setLastSavedCaptureAt(saved.createdAt)
+    return true
+  }, [])
+
+  const startCapture = useCallback(() => {
+    captureEventsRef.current = []
+    captureEnabledRef.current = true
+    setCaptureEnabled(true)
+  }, [])
+
+  const stopCaptureAndSave = useCallback(() => {
+    const saved = saveCaptureSnapshot()
+    captureEnabledRef.current = false
+    setCaptureEnabled(false)
+    return saved
+  }, [saveCaptureSnapshot])
 
   const setAgentStatus = useCallback((id: string, status: Status) => {
     setAgents((prev) =>
@@ -354,6 +401,7 @@ export function useAgentsRuntime() {
     sendCodexRpcResponse,
   } = useCodexRuntime({
     agentsRef,
+    onWsFrame: appendWsFrame,
     pushDebugEvent,
     setAgentStatus,
     setAgents,
@@ -367,6 +415,7 @@ export function useAgentsRuntime() {
     sendClaudeControlResponse,
   } = useClaudeRuntime({
     agentsRef,
+    onWsFrame: appendWsFrame,
     pushDebugEvent,
     setAgentStatus,
     setAgents,
@@ -375,6 +424,10 @@ export function useAgentsRuntime() {
   useEffect(() => {
     agentsRef.current = agents
   }, [agents])
+
+  useEffect(() => {
+    captureEnabledRef.current = captureEnabled
+  }, [captureEnabled])
 
   const connectTo = useCallback(
     (
@@ -585,9 +638,14 @@ export function useAgentsRuntime() {
     activeStreamItems,
     activeTab,
     autoFollow,
+    captureEnabled,
     handleApprovalInput,
     handleApprovalResponse,
+    lastSavedCaptureAt,
+    saveCaptureSnapshot,
     selectedTabId,
+    startCapture,
+    stopCaptureAndSave,
     setAutoFollow,
     setSelectedTabId,
     visibleTabs,

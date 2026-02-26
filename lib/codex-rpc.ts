@@ -43,7 +43,14 @@ export type CodexKnownNotification =
 export type CodexKnownMethod = CodexKnownNotification["method"]
 
 type CodexParamCompatibility = {
+  argv?: string | string[]
+  args?: string | string[]
   command?: string | string[]
+  commandLine?: string | string[]
+  cmd?: string | string[]
+  conversation?: { id?: string }
+  conversationId?: string
+  conversation_id?: string
   content?: JsonValue
   data?: JsonValue
   delta?: JsonValue
@@ -137,6 +144,30 @@ function normalizeCommand(
   return joined || undefined
 }
 
+function normalizeUnknownCommand(value: unknown): string | undefined {
+  if (typeof value === "string") {
+    return normalizeCommand(value)
+  }
+  if (
+    Array.isArray(value) &&
+    value.every((entry) => typeof entry === "string")
+  ) {
+    return normalizeCommand(value)
+  }
+  return undefined
+}
+
+function readCommandLikeField(
+  params: CodexRpcParams | undefined,
+  key: string
+): string | undefined {
+  if (!params) {
+    return undefined
+  }
+  const record = params as Record<string, unknown>
+  return normalizeUnknownCommand(record[key])
+}
+
 export function codexIdFromParams(params?: CodexRpcParams): string | undefined {
   return readTrimmedString(params?.id)
 }
@@ -147,8 +178,7 @@ export function codexTurnIdFromParams(
   return (
     readTrimmedString(params?.turnId) ??
     readTrimmedString(params?.turn_id) ??
-    readTrimmedString(params?.turn?.id) ??
-    readTrimmedString(params?.id)
+    readTrimmedString(params?.turn?.id)
   )
 }
 
@@ -158,7 +188,10 @@ export function codexThreadIdFromParams(
   return (
     readTrimmedString(params?.threadId) ??
     readTrimmedString(params?.thread_id) ??
-    readTrimmedString(params?.thread?.id)
+    readTrimmedString(params?.thread?.id) ??
+    readTrimmedString(params?.conversationId) ??
+    readTrimmedString(params?.conversation_id) ??
+    readTrimmedString(params?.conversation?.id)
   )
 }
 
@@ -179,7 +212,16 @@ export function codexThreadNameFromParams(
 export function codexCommandFromParams(
   params?: CodexRpcParams
 ): string | undefined {
-  return normalizeCommand(params?.command)
+  return (
+    normalizeCommand(params?.command) ??
+    normalizeCommand(params?.cmd) ??
+    normalizeCommand(params?.args) ??
+    normalizeCommand(params?.argv) ??
+    normalizeCommand(params?.commandLine) ??
+    readCommandLikeField(params, "command_line") ??
+    readCommandLikeField(params, "line") ??
+    readCommandLikeField(params, "input")
+  )
 }
 
 export function codexStatusFromParams(

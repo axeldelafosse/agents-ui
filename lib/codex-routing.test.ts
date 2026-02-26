@@ -51,6 +51,26 @@ describe("codex routing", () => {
     expect(byTurn.agentId).toBe("agent-a")
   })
 
+  test("routes by conversationId variants", () => {
+    const threads = new Map<string, string>([["thread-conv", "agent-conv"]])
+    const turns = new Map<string, string>()
+
+    const byConversationId = resolveCodexNotificationAgent(threads, turns, {
+      conversationId: "thread-conv",
+    })
+    expect(byConversationId.agentId).toBe("agent-conv")
+
+    const byConversationSnake = resolveCodexNotificationAgent(threads, turns, {
+      conversation_id: "thread-conv",
+    })
+    expect(byConversationSnake.agentId).toBe("agent-conv")
+
+    const byConversationObject = resolveCodexNotificationAgent(threads, turns, {
+      conversation: { id: "thread-conv" },
+    })
+    expect(byConversationObject.agentId).toBe("agent-conv")
+  })
+
   test("returns empty route when identifiers are unknown", () => {
     const threads = new Map<string, string>([["thread-a", "agent-a"]])
     const turns = new Map<string, string>()
@@ -72,23 +92,23 @@ describe("codex routing", () => {
     expect(route).toEqual({})
   })
 
-  test("routes by params.id when turnId is missing", () => {
-    const turns = new Map<string, string>([["turn-by-id", "agent-id"]])
-    const route = resolveCodexNotificationAgent(
-      new Map<string, string>(),
-      turns,
-      {
-        id: "turn-by-id",
-      }
-    )
-    expect(route).toEqual({ agentId: "agent-id" })
-  })
-
   test("returns empty when params omit thread and turn identifiers", () => {
     const route = resolveCodexNotificationAgent(
       new Map<string, string>([["thread-a", "agent-a"]]),
       new Map<string, string>([["turn-a", "agent-a"]]),
       {}
+    )
+    expect(route).toEqual({})
+  })
+
+  test("does not route by params.id when turnId is missing", () => {
+    const turns = new Map<string, string>([["event-1", "agent-id"]])
+    const route = resolveCodexNotificationAgent(
+      new Map<string, string>(),
+      turns,
+      {
+        id: "event-1",
+      }
     )
     expect(route).toEqual({})
   })
@@ -130,20 +150,35 @@ describe("codex turn lifecycle", () => {
   test("tracks turn start and completion", () => {
     const turns = new Map<string, string>()
 
-    applyCodexTurnRouting(turns, "turn/started", { id: "turn-1" }, "agent-1")
+    applyCodexTurnRouting(
+      turns,
+      "turn/started",
+      { turnId: "turn-1" },
+      "agent-1"
+    )
     expect(turns.get("turn-1")).toBe("agent-1")
 
-    applyCodexTurnRouting(turns, "turn/completed", { id: "turn-1" }, "agent-1")
+    applyCodexTurnRouting(
+      turns,
+      "turn/completed",
+      { turnId: "turn-1" },
+      "agent-1"
+    )
     expect(turns.has("turn-1")).toBe(false)
   })
 
   test("ignores unrelated methods", () => {
     const turns = new Map<string, string>()
-    applyCodexTurnRouting(turns, "item/completed", { id: "turn-1" }, "agent-1")
+    applyCodexTurnRouting(
+      turns,
+      "item/completed",
+      { turnId: "turn-1" },
+      "agent-1"
+    )
     expect(turns.size).toBe(0)
   })
 
-  test("ignores turn lifecycle methods without params.id", () => {
+  test("ignores turn lifecycle methods without turn id", () => {
     const turns = new Map<string, string>()
     applyCodexTurnRouting(turns, "turn/started", {}, "agent-1")
     applyCodexTurnRouting(turns, "turn/completed", {}, "agent-1")

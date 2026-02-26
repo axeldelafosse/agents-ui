@@ -4,61 +4,44 @@ import { projectCodexOutputFromNotification } from "@/lib/codex-output-events"
 import { createCodexOutputState, reduceCodexOutput } from "@/lib/stream-output"
 
 describe("codex output event projection", () => {
-  test("projects raw response item text and appends newline for readability", () => {
+  test("projects item/agentMessage/delta text", () => {
     const projected = projectCodexOutputFromNotification({
-      method: "codex/event/raw_response_item",
+      method: "item/agentMessage/delta",
       params: {
-        msg: {
-          content: [{ type: "output_text", text: "First sentence." }],
-        },
+        text: "First sentence.",
       },
       threadId: "thread-a",
     })
 
-    expect(projected.missingText).toBeUndefined()
     expect(projected.events).toEqual([
       {
         method: "item/agentMessage/delta",
-        text: "First sentence.\n",
+        text: "First sentence.",
         threadId: "thread-a",
       },
     ])
   })
 
-  test("projects user_message using raw msg parser", () => {
+  test("ignores mirrored legacy message method variants", () => {
     const projected = projectCodexOutputFromNotification({
-      method: "codex/event/user_message",
+      method: "codex/event/agent_message_delta",
       params: {
-        msg: {
-          content: [{ type: "text", value: "User-event payload text" }],
-        },
+        text: "legacy",
       },
       threadId: "thread-b",
     })
 
-    expect(projected.events).toEqual([
-      {
-        method: "item/agentMessage/delta",
-        text: "User-event payload text\n",
-        threadId: "thread-b",
-      },
-    ])
+    expect(projected.events).toEqual([])
   })
 
-  test("maps completed variants to item/completed", () => {
+  test("maps item/completed", () => {
     const completed = projectCodexOutputFromNotification({
-      method: "codex/event/item_completed",
-      params: {},
-      threadId: "thread-c",
-    })
-    const rawCompleted = projectCodexOutputFromNotification({
-      method: "rawResponseItem/completed",
+      method: "item/completed",
       params: {},
       threadId: "thread-c",
     })
 
     expect(completed.events).toEqual([{ method: "item/completed" }])
-    expect(rawCompleted.events).toEqual([{ method: "item/completed" }])
   })
 
   test("projects tool begin event into readable command text", () => {
@@ -79,9 +62,21 @@ describe("codex output event projection", () => {
     ])
   })
 
+  test("skips tool begin projection when command is missing", () => {
+    const projected = projectCodexOutputFromNotification({
+      method: "codex/event/exec_command_begin",
+      params: {
+        call_id: "cmd-unknown",
+      },
+      threadId: "thread-tool",
+    })
+
+    expect(projected.events).toEqual([])
+  })
+
   test("projects tool output delta and reports missing text metadata", () => {
     const projected = projectCodexOutputFromNotification({
-      method: "codex/event/exec_command_output_delta",
+      method: "item/commandExecution/outputDelta",
       params: {
         delta: "8 pass",
       },
@@ -150,19 +145,8 @@ describe("codex output event projection", () => {
       threadId: "thread-1",
     })
 
-    expect(projected.events).toEqual([
-      {
-        method: "item/agentMessage/delta",
-        text: "",
-        threadId: "thread-1",
-      },
-    ])
-    expect(projected.missingText).toEqual({
-      keys: "msg",
-      method: "codex/event/raw_response_item",
-      msgKeys: "id,conversationId,status",
-      msgType: "object",
-    })
+    expect(projected.events).toEqual([])
+    expect(projected.missingText).toBeUndefined()
   })
 })
 
@@ -170,25 +154,21 @@ describe("codex output projection integration sequence", () => {
   test("preserves first sentence and inserts readable boundaries", () => {
     const sequence = [
       projectCodexOutputFromNotification({
-        method: "codex/event/raw_response_item",
+        method: "item/agentMessage/delta",
         params: {
-          msg: {
-            content: [{ type: "output_text", text: "First sentence." }],
-          },
+          text: "First sentence.",
         },
         threadId: "thread-seq",
       }),
       projectCodexOutputFromNotification({
-        method: "codex/event/user_message",
+        method: "item/agentMessage/delta",
         params: {
-          msg: {
-            content: [{ type: "output_text", text: "Second sentence." }],
-          },
+          text: "Second sentence.",
         },
         threadId: "thread-seq",
       }),
       projectCodexOutputFromNotification({
-        method: "rawResponseItem/completed",
+        method: "item/completed",
         params: {},
         threadId: "thread-seq",
       }),
@@ -207,7 +187,7 @@ describe("codex output projection integration sequence", () => {
       }
     }
 
-    expect(output).toBe("First sentence.\nSecond sentence.\n\n")
+    expect(output).toBe("First sentence.Second sentence.\n\n")
   })
 
   test("renders simple tool lifecycle in the transcript", () => {
@@ -220,7 +200,7 @@ describe("codex output projection integration sequence", () => {
         threadId: "thread-seq",
       }),
       projectCodexOutputFromNotification({
-        method: "codex/event/exec_command_output_delta",
+        method: "item/commandExecution/outputDelta",
         params: {
           delta: "Checked 1 file in 5ms. No fixes applied.",
         },

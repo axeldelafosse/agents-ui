@@ -1,6 +1,7 @@
 "use client"
 
-import { Fragment, useCallback } from "react"
+import { Fragment, useMemo } from "react"
+import { DEBUG_MODE } from "@/app/features/agents/constants"
 import { cn } from "@/lib/utils"
 import { StreamApprovalRequest } from "./stream-approval-request"
 import { StreamCollabAgent } from "./stream-collab-agent"
@@ -29,6 +30,95 @@ export interface StreamFeedProps extends StreamApprovalCallbacks {
 
 interface StreamRendererProps extends StreamApprovalCallbacks {
   item: StreamItem
+}
+
+const MESSAGE_DEDUPE_WHITESPACE_REGEX = /\s+/g
+const MESSAGE_DEDUPE_WINDOW_MS = 10_000
+
+function readMessageRole(item: StreamItem): string | undefined {
+  const role = item.data.role
+  if (typeof role === "string") {
+    return role
+  }
+  const messageRole = item.data.messageRole
+  if (typeof messageRole === "string") {
+    return messageRole
+  }
+  const authorRole = item.data.authorRole
+  if (typeof authorRole === "string") {
+    return authorRole
+  }
+  return undefined
+}
+
+function readMessageText(item: StreamItem): string | undefined {
+  const text = item.data.text
+  if (typeof text === "string") {
+    return text
+  }
+  return undefined
+}
+
+function normalizeMessageText(text: string): string {
+  return text.replace(MESSAGE_DEDUPE_WHITESPACE_REGEX, " ").trim()
+}
+
+function areEquivalentUserMessageDuplicates(
+  previous: StreamItem,
+  current: StreamItem
+): boolean {
+  if (previous.type !== "message" || current.type !== "message") {
+    return false
+  }
+  if (
+    readMessageRole(previous) !== "user" ||
+    readMessageRole(current) !== "user"
+  ) {
+    return false
+  }
+  const previousText = readMessageText(previous)
+  const currentText = readMessageText(current)
+  if (!(previousText && currentText)) {
+    return false
+  }
+  if (
+    normalizeMessageText(previousText) !== normalizeMessageText(currentText)
+  ) {
+    return false
+  }
+  if (
+    previous.threadId &&
+    current.threadId &&
+    previous.threadId !== current.threadId
+  ) {
+    return false
+  }
+  if (previous.turnId && current.turnId && previous.turnId !== current.turnId) {
+    return false
+  }
+  const oneHasItemId = Boolean(previous.itemId) !== Boolean(current.itemId)
+  const nearInTime =
+    Math.abs(previous.timestamp - current.timestamp) <= MESSAGE_DEDUPE_WINDOW_MS
+  return oneHasItemId && nearInTime
+}
+
+export function dedupeUserMessageMirrors(
+  items: readonly StreamItem[]
+): StreamItem[] {
+  const deduped: StreamItem[] = []
+  for (const item of items) {
+    const previous = deduped.at(-1)
+    if (!(previous && areEquivalentUserMessageDuplicates(previous, item))) {
+      deduped.push(item)
+      continue
+    }
+    const shouldReplacePrevious =
+      previous.status !== "complete" && item.status === "complete"
+    if (shouldReplacePrevious) {
+      deduped[deduped.length - 1] = item
+    }
+  }
+  return deduped
 }
 
 const renderStreamItem = ({
@@ -80,20 +170,10 @@ const renderStreamItem = ({
     case "status":
       return <StreamStatus item={item} />
     case "raw_item":
-      return <StreamRawItem item={item} />
+      return DEBUG_MODE ? <StreamRawItem item={item} /> : null
     default:
-      return <StreamRawItem item={item} />
+      return DEBUG_MODE ? <StreamRawItem item={item} /> : null
   }
-}
-
-const shouldRenderTurnBoundary = (
-  previous: StreamItem | undefined,
-  current: StreamItem
-): boolean => {
-  if (!(previous?.turnId && current.turnId)) {
-    return false
-  }
-  return previous.turnId !== current.turnId
 }
 
 export function StreamFeed({
@@ -103,14 +183,9 @@ export function StreamFeed({
   onDeny,
   onSubmitInput,
 }: StreamFeedProps) {
-  const scrollToEnd = useCallback((node: HTMLLIElement | null) => {
-    node?.scrollIntoView({
-      behavior: "smooth",
-      block: "end",
-    })
-  }, [])
+  const visibleItems = useMemo(() => dedupeUserMessageMirrors(items), [items])
 
-  if (items.length === 0) {
+  if (visibleItems.length === 0) {
     return (
       <output className="block text-sm text-zinc-400">
         No stream items yet.
@@ -124,15 +199,15 @@ export function StreamFeed({
       aria-label="Structured stream transcript"
       aria-live="polite"
       aria-relevant="additions text"
-      className={cn("space-y-3 pl-5", className)}
+      className={cn("space-y-3 pl-1", className)}
       role="log"
     >
-      {items.map((item, index) => {
-        const previous = index > 0 ? items[index - 1] : undefined
+      {visibleItems.map((item, index) => {
+        // const previous = index > 0 ? visibleItems[index - 1] : undefined
         const itemKey = item.id || `${item.type}-${index}`
         return (
           <Fragment key={itemKey}>
-            {shouldRenderTurnBoundary(previous, item) ? (
+            {/* {shouldRenderTurnBoundary(previous, item) ? (
               <li aria-hidden className="list-none">
                 <div className="relative flex items-center justify-center py-1.5">
                   <span className="h-px w-full bg-zinc-800" />
@@ -141,19 +216,13 @@ export function StreamFeed({
                   </span>
                 </div>
               </li>
-            ) : null}
+            ) : null} */}
             <li className="marker:text-zinc-600">
               {renderStreamItem({ item, onApprove, onDeny, onSubmitInput })}
             </li>
           </Fragment>
         )
       })}
-      <li
-        aria-hidden
-        className="list-none"
-        key={`tail-${items.length}`}
-        ref={scrollToEnd}
-      />
     </ol>
   )
 }

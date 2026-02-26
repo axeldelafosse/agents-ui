@@ -66,6 +66,10 @@ class Relay {
   handleFrontendRaw(text: string) {
     // Forward raw to Claude — frontend is responsible for sending
     // messages in Claude's native format.
+    // Also fan out to observing frontends so monitor UIs can display
+    // user prompts that are only emitted frontend -> Claude (and may not
+    // be echoed back by Claude as `type:"user"`).
+    this.broadcastRaw(text)
     if (this.claude) {
       this.claude.send(text)
     }

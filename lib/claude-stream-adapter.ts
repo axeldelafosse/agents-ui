@@ -6,7 +6,6 @@ import type {
   StreamItemType,
 } from "@/lib/stream-items"
 import {
-  type ClaudeMessageContentBlock,
   type ClaudeSessionMessage,
   type ClaudeStreamEvent,
   type ClaudeStreamMessage,
@@ -18,7 +17,15 @@ import {
 } from "@/lib/stream-parsing"
 
 interface ClaudeContentEnvelope {
-  content?: ClaudeMessageContentBlock[]
+  content?: unknown
+}
+
+interface ClaudeNormalizedMessageBlock {
+  content?: unknown
+  input?: unknown
+  name?: string
+  text?: string
+  type?: string
 }
 
 interface ClaudeControlRequest {
@@ -52,6 +59,8 @@ export interface ClaudeStreamAdapterState {
   blockBuffers: Record<string, ClaudeBufferState>
   blockTypes: Record<string, StreamItemType>
   nextSyntheticId: number
+  pendingAssistantTurnIndex?: number
+  pendingResultTurnIndex?: number
   turnIndex: number
   turnOpen: boolean
 }
@@ -178,10 +187,75 @@ function streamItemTypeForDelta(deltaType: string | undefined): StreamItemType {
   }
 }
 
+function normalizeMessageBlock(
+  value: unknown
+): ClaudeNormalizedMessageBlock | undefined {
+  if (typeof value === "string") {
+    return {
+      content: value,
+      text: value,
+      type: "text",
+    }
+  }
+
+  const record = asRecord(value)
+  if (!record) {
+    return undefined
+  }
+
+  const recordType = readString(record.type)
+  let recordText: string | undefined
+  if (typeof record.text === "string") {
+    recordText = record.text
+  } else if (typeof record.content === "string") {
+    recordText = record.content
+  }
+
+  const normalized: ClaudeNormalizedMessageBlock = {
+    content: record.content,
+    input: record.input,
+    name: readString(record.name),
+    text: recordText,
+    type: recordType ?? (recordText !== undefined ? "text" : undefined),
+  }
+
+  if (
+    normalized.type === undefined &&
+    normalized.content === undefined &&
+    normalized.input === undefined &&
+    normalized.name === undefined &&
+    normalized.text === undefined
+  ) {
+    return undefined
+  }
+
+  return normalized
+}
+
+function normalizeMessageBlocks(
+  content: unknown
+): ClaudeNormalizedMessageBlock[] {
+  if (Array.isArray(content)) {
+    const normalized: ClaudeNormalizedMessageBlock[] = []
+    for (const entry of content) {
+      const block = normalizeMessageBlock(entry)
+      if (block) {
+        normalized.push(block)
+      }
+    }
+    return normalized
+  }
+
+  const single = normalizeMessageBlock(content)
+  return single ? [single] : []
+}
+
 function startTurn(state: ClaudeStreamAdapterState): void {
   state.turnIndex += 1
   state.turnOpen = true
   state.activeBlockIds = {}
+  state.pendingAssistantTurnIndex = undefined
+  state.pendingResultTurnIndex = undefined
 }
 
 function ensureTurn(state: ClaudeStreamAdapterState): number {
@@ -189,6 +263,25 @@ function ensureTurn(state: ClaudeStreamAdapterState): number {
     startTurn(state)
   }
   return state.turnIndex
+}
+
+function resolveAssistantTurnIndex(state: ClaudeStreamAdapterState): number {
+  if (typeof state.pendingAssistantTurnIndex === "number") {
+    const turnIndex = state.pendingAssistantTurnIndex
+    state.pendingAssistantTurnIndex = undefined
+    return turnIndex
+  }
+  return ensureTurn(state)
+}
+
+function resolveResultTurnIndex(state: ClaudeStreamAdapterState): number {
+  if (state.turnOpen) {
+    return state.turnIndex
+  }
+  if (typeof state.pendingResultTurnIndex === "number") {
+    return state.pendingResultTurnIndex
+  }
+  return ensureTurn(state)
 }
 
 function activeBlockIds(state: ClaudeStreamAdapterState): string[] {
@@ -247,6 +340,7 @@ function updateBufferForDelta(
   }
 }
 
+// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: stream-event parsing needs explicit branch handling for protocol variants.
 function adaptStreamEvent(
   state: ClaudeStreamAdapterState,
   event: ClaudeStreamEvent,
@@ -269,7 +363,11 @@ function adaptStreamEvent(
     for (const id of activeBlockIds(state)) {
       actions.push({ type: "complete", id })
     }
+    const closedTurnIndex = state.turnIndex > 0 ? state.turnIndex : undefined
     state.activeBlockIds = {}
+    state.turnOpen = false
+    state.pendingAssistantTurnIndex = closedTurnIndex
+    state.pendingResultTurnIndex = closedTurnIndex
     return actions
   }
 
@@ -397,15 +495,16 @@ function adaptAssistantMessage(
   sessionId: string | undefined
 ): StreamItemAction[] {
   const actions: StreamItemAction[] = []
-  const content = message.message?.content
-  if (!Array.isArray(content) || content.length === 0) {
+  const role = message.type === "user" ? "user" : "assistant"
+  const content = normalizeMessageBlocks(message.message?.content)
+  if (content.length === 0) {
     actions.push(
       createRawItemAction(state, prefix, timestamp, message, options, sessionId)
     )
     return actions
   }
 
-  const turnIndex = ensureTurn(state)
+  const turnIndex = resolveAssistantTurnIndex(state)
   for (const [index, block] of content.entries()) {
     const blockType = readString(block.type)
     const streamType = streamItemTypeForBlock(blockType)
@@ -420,9 +519,9 @@ function adaptAssistantMessage(
         typeof block.input === "string"
           ? block.input
           : EMPTY_BUFFER.partialJson,
-      text: typeof block.text === "string" ? block.text : EMPTY_BUFFER.text,
+      text: block.text ?? EMPTY_BUFFER.text,
       thinking:
-        blockType === "thinking" && typeof block.text === "string"
+        blockType === "thinking" && block.text !== undefined
           ? block.text
           : EMPTY_BUFFER.thinking,
     }
@@ -433,6 +532,7 @@ function adaptAssistantMessage(
       content: block.content,
       input: block.input,
       name: block.name,
+      role,
       text: block.text,
       raw: block,
     }
@@ -453,6 +553,10 @@ function adaptAssistantMessage(
       ),
     })
   }
+
+  state.turnOpen = false
+  state.pendingAssistantTurnIndex = undefined
+  state.pendingResultTurnIndex = turnIndex
 
   return actions
 }
@@ -523,11 +627,13 @@ function adaptResult(
   for (const id of activeBlockIds(state)) {
     actions.push({ type: "complete", id })
   }
-  const turnIndex = ensureTurn(state)
+  const turnIndex = resolveResultTurnIndex(state)
   const id = `${prefix}:turn:${turnIndex}:result`
   const isError = message.is_error === true
   state.turnOpen = false
   state.activeBlockIds = {}
+  state.pendingAssistantTurnIndex = undefined
+  state.pendingResultTurnIndex = undefined
   actions.push({
     type: "create",
     item: createItem(
@@ -589,6 +695,8 @@ export function createClaudeStreamAdapterState(): ClaudeStreamAdapterState {
     blockBuffers: {},
     blockTypes: {},
     nextSyntheticId: 1,
+    pendingAssistantTurnIndex: undefined,
+    pendingResultTurnIndex: undefined,
     turnIndex: 0,
     turnOpen: false,
   }

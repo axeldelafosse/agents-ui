@@ -13,6 +13,8 @@ export type Status =
   | "disconnected"
   | "reconnecting"
 
+export type CodexThreadStatus = "notLoaded" | "idle" | "active" | "systemError"
+
 export interface Agent {
   id: string
   output: string
@@ -22,6 +24,7 @@ export interface Agent {
   streamItems: StreamItem[]
   threadId?: string // codex thread id (for display)
   threadName?: string // codex thread/session name (if available)
+  threadStatus?: CodexThreadStatus // codex thread lifecycle status
   url: string
 }
 

@@ -30,7 +30,12 @@ import {
   shortId,
   turnIdFromParams,
 } from "@/app/features/agents/tab-utils"
-import type { Agent, CodexHub, Status } from "@/app/features/agents/types"
+import type {
+  Agent,
+  CodexHub,
+  CodexThreadStatus,
+  Status,
+} from "@/app/features/agents/types"
 import { isReusableCodexPlaceholder } from "@/lib/agent-routing"
 import { projectCodexOutputFromNotification } from "@/lib/codex-output-events"
 import {
@@ -43,6 +48,7 @@ import {
   type CodexRpcMessage,
   type CodexRpcParams,
   codexLoadedThreadIdsFromResult,
+  codexStatusFromParams,
   codexThreadIdFromParams,
   codexThreadIdFromResult,
   codexThreadNameFromParams,
@@ -72,15 +78,29 @@ interface UseCodexRuntimeParams {
 }
 
 interface UseCodexRuntimeResult {
+  archiveCodexThread: (agentId: string, threadId: string) => void
   codexOutputStates: MutableRefObject<Map<string, CodexOutputState>>
   codexThreadAgentIds: MutableRefObject<Map<string, string>>
+  compactCodexThread: (agentId: string, threadId: string) => void
   connectCodex: (targetUrl: string, opts?: { silent?: boolean }) => void
+  forkCodexThread: (agentId: string, threadId: string) => string
+  interruptCodexTurn: (agentId: string) => void
+  listCodexThreads: (hubUrl: string, cursor?: string) => void
   requestCodexLoadedList: (hub: CodexHub) => void
+  resumeCodexThread: (agentId: string, threadId: string) => string
+  rollbackCodexThread: (
+    agentId: string,
+    threadId: string,
+    numTurns: number
+  ) => void
   sendCodexRpcResponse: (
     agentId: string,
     requestId: number | string,
     result: Record<string, unknown>
   ) => boolean
+  setCodexThreadName: (agentId: string, threadId: string, name: string) => void
+  steerCodexTurn: (agentId: string, input: string) => void
+  unarchiveCodexThread: (agentId: string, threadId: string) => void
 }
 
 const CODEX_DEFAULT_THREAD_START_PARAMS = {
@@ -415,20 +435,8 @@ export function useCodexRuntime({
         }
       }
 
-      hub.rpcId++
-      hub.pending.set(hub.rpcId, {
-        agentId: canonicalAgentId,
-        type: "subscribe",
-      })
-      sendCodexPayload(hub, {
-        jsonrpc: "2.0",
-        method: "addConversationListener",
-        id: hub.rpcId,
-        params: {
-          conversationId: threadId,
-          experimentalRawEvents: true,
-        },
-      })
+      // v2 auto-subscribes on thread/start and thread/resume, no explicit
+      // addConversationListener needed.
       requestCodexThreadMeta(hub, canonicalAgentId, threadId)
       return canonicalAgentId
     },
@@ -438,7 +446,6 @@ export function useCodexRuntime({
       clearCodexAgentRuntimeState,
       pushDebugEvent,
       requestCodexThreadMeta,
-      sendCodexPayload,
       setAgentStatus,
       setAgentThread,
       setAgents,
@@ -688,23 +695,8 @@ export function useCodexRuntime({
         consumePendingCodexOutputEvents(discoveredAgent),
       ])
 
-      // ensureCodexThreadRoute already set hub.threads and hub.agents, so
-      // bindCodexThreadToAgent would early-return without subscribing.
-      // Subscribe directly instead.
-      hub.rpcId++
-      hub.pending.set(hub.rpcId, {
-        agentId: ensured.agentId,
-        type: "subscribe",
-      })
-      sendCodexPayload(hub, {
-        jsonrpc: "2.0",
-        method: "addConversationListener",
-        id: hub.rpcId,
-        params: {
-          conversationId: threadId,
-          experimentalRawEvents: true,
-        },
-      })
+      // v2 auto-subscribes on thread/start and thread/resume, no explicit
+      // addConversationListener needed.
       requestCodexThreadMeta(hub, ensured.agentId, threadId)
       return ensured.agentId
     },
@@ -714,7 +706,6 @@ export function useCodexRuntime({
       consumePendingCodexOutputEvents,
       pushDebugEvent,
       requestCodexThreadMeta,
-      sendCodexPayload,
       setAgents,
     ]
   )
@@ -1105,8 +1096,72 @@ export function useCodexRuntime({
             }
           },
         ],
+        [
+          "thread/status/changed",
+          (_hub, msg, _routeParams, routedAgentId) => {
+            const status = codexStatusFromParams(msg.params)
+            const validStatuses = new Set([
+              "notLoaded",
+              "idle",
+              "active",
+              "systemError",
+            ])
+            if (!(status && validStatuses.has(status))) {
+              return
+            }
+            const threadStatus = status as CodexThreadStatus
+            setAgents((prev) =>
+              prev.map((a) => {
+                if (a.id !== routedAgentId) {
+                  return a
+                }
+                const nextStatus: Status =
+                  threadStatus === "notLoaded" ? "disconnected" : "connected"
+                return { ...a, threadStatus, status: nextStatus }
+              })
+            )
+          },
+        ],
+        [
+          "thread/closed",
+          (hub, _msg, _routeParams, routedAgentId, eventThreadId) => {
+            if (eventThreadId) {
+              hub.threads.delete(eventThreadId)
+              hub.primaryThreads.delete(eventThreadId)
+              hub.threadMetaRequested.delete(eventThreadId)
+              if (
+                codexThreadAgentIds.current.get(eventThreadId) === routedAgentId
+              ) {
+                codexThreadAgentIds.current.delete(eventThreadId)
+              }
+              // Clean up turns associated with this thread
+              for (const [turnId, turnThreadId] of hub.turnThreads.entries()) {
+                if (turnThreadId === eventThreadId) {
+                  hub.turnThreads.delete(turnId)
+                  hub.turns.delete(turnId)
+                }
+              }
+            }
+            // Disconnect agent if it has no other threads
+            const hasOtherThreads = [...hub.threads.values()].includes(
+              routedAgentId
+            )
+            if (!hasOtherThreads) {
+              hub.agents.delete(routedAgentId)
+              setAgentStatus(routedAgentId, "disconnected")
+              clearCodexAgentRuntimeState(routedAgentId)
+            }
+          },
+        ],
       ]),
-    [completeCodexTurnLifecycle, enqueueCodexSubagentParent, setAgentThreadName]
+    [
+      clearCodexAgentRuntimeState,
+      completeCodexTurnLifecycle,
+      enqueueCodexSubagentParent,
+      setAgentStatus,
+      setAgentThreadName,
+      setAgents,
+    ]
   )
 
   const applyCodexNotificationByMethod = useCallback(
@@ -1462,8 +1517,6 @@ export function useCodexRuntime({
         if (preview) {
           setAgentThreadNameIfMissing(ctx.agentId, preview)
         }
-      } else if (ctx.type === "subscribe") {
-        // subscription confirmed, nothing to do
       } else if (ctx.type === "turn_start" && ctx.agentId) {
         const startedTurnId = codexTurnIdFromResult(msg.result)
         if (!startedTurnId) {
@@ -1474,6 +1527,48 @@ export function useCodexRuntime({
         if (ctx.threadId) {
           hub.turnThreads.set(startedTurnId, ctx.threadId)
         }
+      } else if (ctx.type === "turn_interrupt") {
+        // interrupt confirmed, turn/completed notification will follow
+      } else if (ctx.type === "turn_steer") {
+        // steer confirmed, turn continues with new input
+      } else if (
+        ctx.type === "thread_resume" &&
+        ctx.agentId &&
+        codexThreadIdFromResult(msg.result)
+      ) {
+        const threadId = codexThreadIdFromResult(msg.result)
+        if (!threadId) {
+          return
+        }
+        hub.primaryThreads.add(threadId)
+        bindCodexThreadToAgent(hub, ctx.agentId, threadId)
+        requestCodexLoadedList(hub)
+      } else if (
+        ctx.type === "thread_fork" &&
+        ctx.agentId &&
+        codexThreadIdFromResult(msg.result)
+      ) {
+        const threadId = codexThreadIdFromResult(msg.result)
+        if (!threadId) {
+          return
+        }
+        hub.primaryThreads.add(threadId)
+        bindCodexThreadToAgent(hub, ctx.agentId, threadId)
+        requestCodexLoadedList(hub)
+      } else if (ctx.type === "thread_list") {
+        // thread list response stored via ref in caller
+      } else if (ctx.type === "thread_archive") {
+        // archive confirmed, thread/archived notification will follow
+      } else if (ctx.type === "thread_unarchive") {
+        // unarchive confirmed, thread/unarchived notification will follow
+      } else if (ctx.type === "thread_name_set" && ctx.agentId) {
+        // name set confirmed, thread/name/updated notification will follow
+      } else if (ctx.type === "thread_rollback") {
+        // rollback confirmed
+      } else if (ctx.type === "thread_compact") {
+        // compact started, thread/compacted notification will follow
+      } else if (ctx.type === "thread_unsubscribe") {
+        // unsubscribe confirmed
       }
     },
     [
@@ -1601,14 +1696,37 @@ export function useCodexRuntime({
               version: "0.1.0",
               title: "Agents UI",
             },
+            capabilities: {
+              experimentalApi: true,
+            },
           },
         })
       }
       ws.onmessage = (e) => handleCodexMessage(hub, e.data)
+      // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: close handler with thread cleanup and reconnect lifecycle
       ws.onclose = () => {
         pushDebugEvent(
           `codex hub-close hub=${hostFromUrl(targetUrl)} agents=${hub.agents.size} threads=${hub.threads.size} reconnect=${hub.reconnectEnabled}`
         )
+        // Send thread/unsubscribe for all subscribed threads if still possible
+        if (hub.ws.readyState === WebSocket.OPEN) {
+          for (const threadId of hub.threads.keys()) {
+            hub.rpcId++
+            hub.pending.set(hub.rpcId, {
+              type: "thread_unsubscribe",
+            })
+            try {
+              sendCodexPayload(hub, {
+                jsonrpc: "2.0",
+                method: "thread/unsubscribe",
+                id: hub.rpcId,
+                params: { threadId },
+              })
+            } catch {
+              // WS may already be closing, ignore
+            }
+          }
+        }
         // Clear stale thread→agent mappings so reconnects don't route to dead agents
         for (const [threadId, agentId] of hub.threads.entries()) {
           if (codexThreadAgentIds.current.get(threadId) === agentId) {
@@ -1713,6 +1831,9 @@ export function useCodexRuntime({
                     name: "agents-ui",
                     version: "0.1.0",
                     title: "Agents UI",
+                  },
+                  capabilities: {
+                    experimentalApi: true,
                   },
                 },
               })
@@ -1895,11 +2016,337 @@ export function useCodexRuntime({
     [pushDebugEvent, sendCodexPayload]
   )
 
+  const findHubForAgent = useCallback(
+    (agentId: string): CodexHub | undefined => {
+      for (const hub of codexHubs.values()) {
+        if (hub.agents.has(agentId)) {
+          return hub
+        }
+      }
+      return undefined
+    },
+    []
+  )
+
+  // Phase 1a: turn/interrupt
+  const interruptCodexTurn = useCallback(
+    (agentId: string) => {
+      const hub = findHubForAgent(agentId)
+      if (!hub || hub.ws.readyState !== WebSocket.OPEN) {
+        return
+      }
+      const agent = agentsRef.current.find((a) => a.id === agentId)
+      const threadId = agent?.threadId
+      if (!threadId) {
+        return
+      }
+      // Find active turn for this agent
+      let activeTurnId: string | undefined
+      for (const [turnId, turnAgentId] of hub.turns.entries()) {
+        if (turnAgentId === agentId) {
+          activeTurnId = turnId
+          break
+        }
+      }
+      if (!activeTurnId) {
+        return
+      }
+      hub.rpcId++
+      hub.pending.set(hub.rpcId, {
+        agentId,
+        type: "turn_interrupt",
+      })
+      sendCodexPayload(
+        hub,
+        {
+          jsonrpc: "2.0",
+          method: "turn/interrupt",
+          id: hub.rpcId,
+          params: { threadId, turnId: activeTurnId },
+        },
+        agentId
+      )
+    },
+    [agentsRef, findHubForAgent, sendCodexPayload]
+  )
+
+  // Phase 1a: turn/steer
+  const steerCodexTurn = useCallback(
+    (agentId: string, input: string) => {
+      const hub = findHubForAgent(agentId)
+      if (!hub || hub.ws.readyState !== WebSocket.OPEN) {
+        return
+      }
+      const agent = agentsRef.current.find((a) => a.id === agentId)
+      const threadId = agent?.threadId
+      if (!threadId) {
+        return
+      }
+      // Find active turn for this agent
+      let activeTurnId: string | undefined
+      for (const [turnId, turnAgentId] of hub.turns.entries()) {
+        if (turnAgentId === agentId) {
+          activeTurnId = turnId
+          break
+        }
+      }
+      if (!activeTurnId) {
+        return
+      }
+      hub.rpcId++
+      hub.pending.set(hub.rpcId, {
+        agentId,
+        type: "turn_steer",
+      })
+      sendCodexPayload(
+        hub,
+        {
+          jsonrpc: "2.0",
+          method: "turn/steer",
+          id: hub.rpcId,
+          params: {
+            threadId,
+            turnId: activeTurnId,
+            input: [{ type: "text", text: input }],
+          },
+        },
+        agentId
+      )
+    },
+    [agentsRef, findHubForAgent, sendCodexPayload]
+  )
+
+  // Phase 1b: thread/resume
+  const resumeCodexThread = useCallback(
+    (agentId: string, threadId: string): string => {
+      const hub = findHubForAgent(agentId)
+      if (!hub || hub.ws.readyState !== WebSocket.OPEN) {
+        return agentId
+      }
+      hub.rpcId++
+      hub.pending.set(hub.rpcId, {
+        agentId,
+        type: "thread_resume",
+      })
+      sendCodexPayload(
+        hub,
+        {
+          jsonrpc: "2.0",
+          method: "thread/resume",
+          id: hub.rpcId,
+          params: { threadId },
+        },
+        agentId
+      )
+      return agentId
+    },
+    [findHubForAgent, sendCodexPayload]
+  )
+
+  // Phase 1b: thread/fork
+  const forkCodexThread = useCallback(
+    (agentId: string, threadId: string): string => {
+      const hub = findHubForAgent(agentId)
+      if (!hub || hub.ws.readyState !== WebSocket.OPEN) {
+        return agentId
+      }
+      hub.rpcId++
+      hub.pending.set(hub.rpcId, {
+        agentId,
+        type: "thread_fork",
+      })
+      sendCodexPayload(
+        hub,
+        {
+          jsonrpc: "2.0",
+          method: "thread/fork",
+          id: hub.rpcId,
+          params: { threadId },
+        },
+        agentId
+      )
+      return agentId
+    },
+    [findHubForAgent, sendCodexPayload]
+  )
+
+  // Phase 2a: thread/list
+  const listCodexThreads = useCallback(
+    (hubUrl: string, cursor?: string) => {
+      const hub = codexHubs.get(hubUrl)
+      if (!hub?.initialized || hub.ws.readyState !== WebSocket.OPEN) {
+        return
+      }
+      const requesterAgentId =
+        hub.threads.values().next().value ?? hub.agents.values().next().value
+      hub.rpcId++
+      hub.pending.set(hub.rpcId, {
+        agentId: requesterAgentId,
+        type: "thread_list",
+      })
+      const params: Record<string, unknown> = { limit: 50 }
+      if (cursor) {
+        params.cursor = cursor
+      }
+      sendCodexPayload(
+        hub,
+        {
+          jsonrpc: "2.0",
+          method: "thread/list",
+          id: hub.rpcId,
+          params,
+        },
+        requesterAgentId
+      )
+    },
+    [sendCodexPayload]
+  )
+
+  // Phase 2b: thread/archive
+  const archiveCodexThread = useCallback(
+    (agentId: string, threadId: string) => {
+      const hub = findHubForAgent(agentId)
+      if (!hub || hub.ws.readyState !== WebSocket.OPEN) {
+        return
+      }
+      hub.rpcId++
+      hub.pending.set(hub.rpcId, {
+        agentId,
+        type: "thread_archive",
+      })
+      sendCodexPayload(
+        hub,
+        {
+          jsonrpc: "2.0",
+          method: "thread/archive",
+          id: hub.rpcId,
+          params: { threadId },
+        },
+        agentId
+      )
+    },
+    [findHubForAgent, sendCodexPayload]
+  )
+
+  // Phase 2b: thread/unarchive
+  const unarchiveCodexThread = useCallback(
+    (agentId: string, threadId: string) => {
+      const hub = findHubForAgent(agentId)
+      if (!hub || hub.ws.readyState !== WebSocket.OPEN) {
+        return
+      }
+      hub.rpcId++
+      hub.pending.set(hub.rpcId, {
+        agentId,
+        type: "thread_unarchive",
+      })
+      sendCodexPayload(
+        hub,
+        {
+          jsonrpc: "2.0",
+          method: "thread/unarchive",
+          id: hub.rpcId,
+          params: { threadId },
+        },
+        agentId
+      )
+    },
+    [findHubForAgent, sendCodexPayload]
+  )
+
+  // Phase 2b: thread/name/set
+  const setCodexThreadName = useCallback(
+    (agentId: string, threadId: string, name: string) => {
+      const hub = findHubForAgent(agentId)
+      if (!hub || hub.ws.readyState !== WebSocket.OPEN) {
+        return
+      }
+      hub.rpcId++
+      hub.pending.set(hub.rpcId, {
+        agentId,
+        type: "thread_name_set",
+      })
+      sendCodexPayload(
+        hub,
+        {
+          jsonrpc: "2.0",
+          method: "thread/name/set",
+          id: hub.rpcId,
+          params: { threadId, name },
+        },
+        agentId
+      )
+    },
+    [findHubForAgent, sendCodexPayload]
+  )
+
+  // Phase 2b: thread/rollback
+  const rollbackCodexThread = useCallback(
+    (agentId: string, threadId: string, numTurns: number) => {
+      const hub = findHubForAgent(agentId)
+      if (!hub || hub.ws.readyState !== WebSocket.OPEN) {
+        return
+      }
+      hub.rpcId++
+      hub.pending.set(hub.rpcId, {
+        agentId,
+        type: "thread_rollback",
+      })
+      sendCodexPayload(
+        hub,
+        {
+          jsonrpc: "2.0",
+          method: "thread/rollback",
+          id: hub.rpcId,
+          params: { threadId, numTurns },
+        },
+        agentId
+      )
+    },
+    [findHubForAgent, sendCodexPayload]
+  )
+
+  // Phase 2b: thread/compact/start
+  const compactCodexThread = useCallback(
+    (agentId: string, threadId: string) => {
+      const hub = findHubForAgent(agentId)
+      if (!hub || hub.ws.readyState !== WebSocket.OPEN) {
+        return
+      }
+      hub.rpcId++
+      hub.pending.set(hub.rpcId, {
+        agentId,
+        type: "thread_compact",
+      })
+      sendCodexPayload(
+        hub,
+        {
+          jsonrpc: "2.0",
+          method: "thread/compact/start",
+          id: hub.rpcId,
+          params: { threadId },
+        },
+        agentId
+      )
+    },
+    [findHubForAgent, sendCodexPayload]
+  )
+
   return {
+    archiveCodexThread,
     codexOutputStates,
     codexThreadAgentIds,
+    compactCodexThread,
     connectCodex,
+    forkCodexThread,
+    interruptCodexTurn,
+    listCodexThreads,
     requestCodexLoadedList,
+    resumeCodexThread,
+    rollbackCodexThread,
     sendCodexRpcResponse,
+    setCodexThreadName,
+    steerCodexTurn,
+    unarchiveCodexThread,
   }
 }

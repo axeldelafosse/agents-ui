@@ -4,8 +4,11 @@ import type {
   ServerNotification,
 } from "@/codex-app-server-schemas"
 import type { JsonValue } from "@/codex-app-server-schemas/serde_json/JsonValue"
+import type { ThreadForkResponse } from "@/codex-app-server-schemas/v2/ThreadForkResponse"
+import type { ThreadListResponse } from "@/codex-app-server-schemas/v2/ThreadListResponse"
 import type { ThreadLoadedListResponse } from "@/codex-app-server-schemas/v2/ThreadLoadedListResponse"
 import type { ThreadReadResponse } from "@/codex-app-server-schemas/v2/ThreadReadResponse"
+import type { ThreadResumeResponse } from "@/codex-app-server-schemas/v2/ThreadResumeResponse"
 import type { ThreadStartResponse } from "@/codex-app-server-schemas/v2/ThreadStartResponse"
 import type { TurnStartResponse } from "@/codex-app-server-schemas/v2/TurnStartResponse"
 
@@ -35,10 +38,21 @@ type CodexApprovalNotification =
   | { method: "item/fileChange/outputDelta"; params: Record<string, unknown> }
   | { method: "item/mcpToolCall/progress"; params: Record<string, unknown> }
 
+type CodexThreadLifecycleNotification =
+  | {
+      method: "thread/status/changed"
+      params: Record<string, unknown>
+    }
+  | {
+      method: "thread/closed"
+      params: Record<string, unknown>
+    }
+
 export type CodexKnownNotification =
   | ServerNotification
   | CodexLegacyEventNotification
   | CodexApprovalNotification
+  | CodexThreadLifecycleNotification
 
 export type CodexKnownMethod = CodexKnownNotification["method"]
 
@@ -85,7 +99,7 @@ export type CodexRpcParams = (
   CodexParamCompatibility
 
 type CodexResultCompatibility = {
-  data?: string[]
+  data?: unknown[]
   id?: string
   nextCursor?: string | null
   thread?: { id?: string; preview?: string }
@@ -94,8 +108,11 @@ type CodexResultCompatibility = {
 
 type CodexKnownResult =
   | InitializeResponse
+  | ThreadForkResponse
+  | ThreadListResponse
   | ThreadLoadedListResponse
   | ThreadReadResponse
+  | ThreadResumeResponse
   | ThreadStartResponse
   | TurnStartResponse
 

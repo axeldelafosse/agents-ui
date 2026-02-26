@@ -13,11 +13,7 @@ const preview: Preview = {
         {
           className: "dark",
           style: {
-            background: "oklch(0.145 0 0)",
             minHeight: "100vh",
-            "--font-sans": "ui-sans-serif, system-ui, sans-serif",
-            "--font-geist-mono":
-              "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, Liberation Mono, Courier New, monospace",
           },
         },
         story

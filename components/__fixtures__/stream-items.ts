@@ -10,35 +10,23 @@ type StreamItemOverrides = Partial<
   Omit<StreamItem, "data" | "id" | "timestamp" | "type">
 > & {
   data?: StreamItem["data"]
-  id?: string
+  id: string
   timestamp?: number
 }
 
-let fixtureCounter = 0
-
 export const createStreamItem = (
   type: StreamItemType,
-  overrides: StreamItemOverrides = {}
-): StreamItem => {
-  fixtureCounter += 1
-  const baseItem: StreamItem = {
-    data: {},
-    id: `fixture-${type}-${fixtureCounter}`,
-    status: "complete",
-    timestamp: FIXTURE_BASE_TIMESTAMP + fixtureCounter * 1000,
-    type,
-  }
-
-  return {
-    ...baseItem,
-    ...overrides,
-    data: {
-      ...baseItem.data,
-      ...(overrides.data ?? {}),
-    },
-    type,
-  }
-}
+  overrides: StreamItemOverrides
+): StreamItem => ({
+  data: {
+    ...(overrides.data ?? {}),
+  },
+  id: overrides.id,
+  status: overrides.status ?? "complete",
+  timestamp: overrides.timestamp ?? FIXTURE_BASE_TIMESTAMP,
+  turnId: overrides.turnId,
+  type,
+})
 
 export const streamStatusItem = createStreamItem("status", {
   data: {

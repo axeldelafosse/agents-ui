@@ -1267,35 +1267,13 @@ export function useCodexRuntime({
           "thread/closed",
           (hub, _msg, _routeParams, routedAgentId, eventThreadId) => {
             if (eventThreadId) {
-              hub.threads.delete(eventThreadId)
-              hub.primaryThreads.delete(eventThreadId)
-              hub.threadMetaRequested.delete(eventThreadId)
-              if (
-                codexThreadAgentIds.current.get(eventThreadId) === routedAgentId
-              ) {
-                codexThreadAgentIds.current.delete(eventThreadId)
-              }
-              // Clean up turns associated with this thread
-              for (const [turnId, turnThreadId] of hub.turnThreads.entries()) {
-                if (turnThreadId === eventThreadId) {
-                  hub.turnThreads.delete(turnId)
-                  hub.turns.delete(turnId)
-                }
-              }
-            }
-            // Disconnect agent if it has no other threads
-            const hasOtherThreads = [...hub.threads.values()].includes(
-              routedAgentId
-            )
-            if (!hasOtherThreads) {
-              hub.agents.delete(routedAgentId)
-              setAgentStatus(routedAgentId, "disconnected")
-              clearCodexAgentRuntimeState(routedAgentId)
+              cleanUpUnsubscribedThread(hub, eventThreadId, routedAgentId)
             }
           },
         ],
       ]),
     [
+      cleanUpUnsubscribedThread,
       clearCodexAgentRuntimeState,
       completeCodexTurnLifecycle,
       enqueueCodexSubagentParent,

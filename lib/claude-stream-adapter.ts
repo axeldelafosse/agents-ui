@@ -18,6 +18,7 @@ import {
 
 interface ClaudeContentEnvelope {
   content?: unknown
+  role?: string
 }
 
 interface ClaudeNormalizedMessageBlock {

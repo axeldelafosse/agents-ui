@@ -3,15 +3,13 @@ import { describe, expect, test } from "bun:test"
 import { applyStreamItemAction, type StreamItem } from "@/lib/stream-items"
 
 function makeItem(id: string, overrides: Partial<StreamItem> = {}): StreamItem {
-  const data = overrides.data ? { ...overrides.data } : {}
   return {
     id,
     type: "message",
     status: "streaming",
     timestamp: 1,
-    data,
     ...overrides,
-    data,
+    data: overrides.data ? { ...overrides.data } : {},
   }
 }
 

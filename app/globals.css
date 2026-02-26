@@ -50,6 +50,12 @@
 }
 
 :root {
+  --font-sans:
+    Inter, Geist, ui-sans-serif, system-ui, -apple-system, "Segoe UI",
+    sans-serif;
+  --font-geist-mono:
+    "Geist Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
+    "Liberation Mono", "Courier New", monospace;
   --background: oklch(1 0 0);
   --foreground: oklch(0.145 0 0);
   --card: oklch(1 0 0);

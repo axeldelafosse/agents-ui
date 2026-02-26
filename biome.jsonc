@@ -6,7 +6,10 @@
     "ultracite/biome/react"
   ],
   "vcs": { "enabled": false, "clientKind": "git", "useIgnoreFile": false },
-  "files": { "ignoreUnknown": false },
+  "files": {
+    "ignoreUnknown": false,
+    "includes": ["!!.agents/skills/dev-browser/profiles"]
+  },
   "formatter": { "enabled": true, "indentStyle": "space" },
   "linter": {
     "enabled": true,

@@ -1,5 +1,5 @@
-import { action } from "@storybook/addon-actions"
 import type { Meta, StoryObj } from "@storybook/nextjs"
+import { fn } from "storybook/test"
 import type { AgentTab, Protocol, Status } from "@/app/features/agents/types"
 import { AgentTabBar } from "@/components/agent-tab-bar"
 
@@ -104,8 +104,8 @@ const meta = {
   args: {
     activeTabId: defaultTabs[0].id,
     autoFollow: false,
-    onAutoFollowChange: action("onAutoFollowChange"),
-    onTabChange: action("onTabChange"),
+    onAutoFollowChange: fn(),
+    onTabChange: fn(),
     tabs: defaultTabs,
   },
 } satisfies Meta<typeof AgentTabBar>

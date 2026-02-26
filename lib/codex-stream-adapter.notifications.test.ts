@@ -37,9 +37,8 @@ describe("codex-stream-adapter notification parity", () => {
       expect(created.item.threadId).toBe("thread-1")
       expect(created.item.turnId).toBe("turn-1")
       expect(created.item.agentId).toBe("agent-1")
-      const rawPayload = JSON.stringify(created.item.data)
-      expect(rawPayload).toContain("turn/diff/updated")
-      expect(rawPayload).toContain("diff")
+      expect(created.item.data).toHaveProperty("diff")
+      expect(created.item.data).toHaveProperty("label", "Turn Diff")
     })
 
     test("includes threadId and turnId from params in raw item", () => {
@@ -72,9 +71,11 @@ describe("codex-stream-adapter notification parity", () => {
       expect(actions.length).toBeGreaterThan(0)
       const created = expectCreate(actions[0])
       expect(created.item.agentId).toBe("agent-1")
-      const rawPayload = JSON.stringify(created.item.data)
-      expect(rawPayload).toContain("model/rerouted")
-      expect(rawPayload).toContain("gpt-4o-mini")
+      expect(created.item.data).toHaveProperty("model", "gpt-4o-mini")
+      expect(created.item.data).toHaveProperty(
+        "text",
+        "Model rerouted to: gpt-4o-mini"
+      )
     })
 
     test("does not produce stream items when method is empty", () => {
@@ -98,9 +99,8 @@ describe("codex-stream-adapter notification parity", () => {
       expect(actions.length).toBeGreaterThan(0)
       const created = expectCreate(actions[0])
       expect(created.item.status).toBe("complete")
-      const rawPayload = JSON.stringify(created.item.data)
-      expect(rawPayload).toContain("deprecationNotice")
-      expect(rawPayload).toContain("API v1 is deprecated")
+      expect(created.item.data).toHaveProperty("level", "warning")
+      expect(created.item.data).toHaveProperty("text", "API v1 is deprecated")
     })
 
     test("preserves agentId on the created item", () => {
@@ -125,9 +125,8 @@ describe("codex-stream-adapter notification parity", () => {
       })
       expect(actions.length).toBeGreaterThan(0)
       const created = expectCreate(actions[0])
-      const rawPayload = JSON.stringify(created.item.data)
-      expect(rawPayload).toContain("configWarning")
-      expect(rawPayload).toContain("Missing API key")
+      expect(created.item.data).toHaveProperty("level", "warning")
+      expect(created.item.data).toHaveProperty("text", "Missing API key")
     })
 
     test("creates distinct items for multiple config warnings", () => {
@@ -157,8 +156,7 @@ describe("codex-stream-adapter notification parity", () => {
       expect(actions.length).toBeGreaterThan(0)
       const created = expectCreate(actions[0])
       expect(created.item.threadId).toBe("thread-1")
-      const rawPayload = JSON.stringify(created.item.data)
-      expect(rawPayload).toContain("thread/unarchived")
+      expect(created.item.data).toHaveProperty("text", "Thread unarchived")
     })
   })
 

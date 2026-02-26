@@ -41,7 +41,7 @@ export function StreamToolCall({ item }: { item: StreamItem }) {
     <StreamItemShell item={item} label={toolName}>
       <details
         className="rounded-md border border-zinc-800 bg-zinc-900/40 p-3"
-        open={item.status === "streaming"}
+        // open={item.status === "streaming"}
       >
         <summary className="cursor-pointer font-medium text-zinc-200">
           {summary ?? "Tool input"}

@@ -41,13 +41,11 @@ export function StreamMessage({ item }: StreamMessageProps) {
             : "text-zinc-200"
         )}
       >
-        {text ? (
+        {text && (
           <StreamMarkdown
             className={cn(isUserMessage && "[&_a]:text-zinc-100")}
             text={text}
           />
-        ) : (
-          <p className="text-zinc-500 italic">Waiting for message content...</p>
         )}
       </div>
     </div>

@@ -35,6 +35,6 @@ export const Rich: Story = {
 export const Shimmer: Story = {
   args: {
     shimmer: true,
-    text: "Thinking through edge cases before applying the patch...",
+    text: "Thinking through **edge cases** before applying the patch...",
   },
 }

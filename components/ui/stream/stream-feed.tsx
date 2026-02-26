@@ -3,6 +3,7 @@
 import { Fragment, useMemo } from "react"
 import { DEBUG_MODE } from "@/app/features/agents/constants"
 import { cn } from "@/lib/utils"
+import { Shimmer } from "../shimmer"
 import { StreamApprovalRequest } from "./stream-approval-request"
 import { StreamCollabAgent } from "./stream-collab-agent"
 import { StreamCommandExecution } from "./stream-command-execution"
@@ -187,9 +188,9 @@ export function StreamFeed({
 
   if (visibleItems.length === 0) {
     return (
-      <output className="block text-sm text-zinc-400">
-        No stream items yet.
-      </output>
+      <Shimmer className="text-sm" duration={2}>
+        Thinking
+      </Shimmer>
     )
   }
 

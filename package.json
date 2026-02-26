@@ -11,7 +11,9 @@
     "update:codex-schemas": "codex app-server generate-ts --out ./codex-app-server-schemas",
     "update:next-agents-md": "npx @next/codemod@canary agents-md",
     "check": "ultracite check",
-    "fix": "ultracite fix"
+    "fix": "ultracite fix",
+    "storybook": "storybook dev -p 6006",
+    "build-storybook": "storybook build"
   },
   "dependencies": {
     "@base-ui/react": "^1.2.0",
@@ -29,15 +31,28 @@
   },
   "devDependencies": {
     "@biomejs/biome": "2.4.0",
+    "@chromatic-com/storybook": "^5.0.1",
+    "@storybook/addon-a11y": "^10.2.12",
+    "@storybook/addon-docs": "^10.2.12",
+    "@storybook/addon-onboarding": "^10.2.12",
+    "@storybook/addon-vitest": "^10.2.12",
+    "@storybook/nextjs": "^10.2.12",
+    "@storybook/nextjs-vite": "^10.2.12",
     "@tailwindcss/postcss": "^4.2.1",
     "@types/bun": "^1.3.9",
     "@types/node": "^25.3.0",
     "@types/react": "^19.2.14",
     "@types/ws": "^8.18.1",
+    "@vitest/browser-playwright": "^4.0.18",
+    "@vitest/coverage-v8": "^4.0.18",
     "babel-plugin-react-compiler": "^1.0.0",
     "concurrently": "^9.2.1",
+    "playwright": "^1.58.2",
+    "storybook": "^10.2.12",
     "tailwindcss": "^4.2.1",
     "typescript": "^5.9.3",
-    "ultracite": "7.2.3"
+    "ultracite": "7.2.3",
+    "vite": "^7.3.1",
+    "vitest": "^4.0.18"
   }
 }

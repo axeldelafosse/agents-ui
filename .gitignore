@@ -17,3 +17,5 @@ backups/
 .DS_Store
 PLAN.md
 screenshots/*
+
+storybook-static/

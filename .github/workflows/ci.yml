@@ -27,11 +27,8 @@ jobs:
       - name: Lint and format checks
         run: bun run check
 
-      - name: Build packages
-        run: bun run build:packages
-
       - name: Run tests
-        run: bun run --filter agents-ui test
+        run: bun run test
 
       - name: Build
         run: bun run build

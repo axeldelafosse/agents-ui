@@ -5,9 +5,9 @@
   "workspaces": ["apps/*", "packages/*"],
   "scripts": {
     "dev": "bun run --filter agents-ui dev",
-    "changeset": "bunx --bun changeset",
-    "changeset:version": "bunx --bun changeset version",
-    "changeset:publish": "bunx --bun changeset publish",
+    "changeset": "changeset",
+    "changeset:version": "changeset version",
+    "changeset:publish": "changeset publish",
     "build": "bun run --filter agents-ui build",
     "start": "bun run --filter agents-ui start",
     "test": "bun run --filter agents-ui test",
@@ -19,5 +19,8 @@
     "build-storybook": "bun run --filter agents-ui build-storybook",
     "chromatic": "bun run --filter agents-ui chromatic",
     "start:relay-server": "bun run --filter relay-server start"
+  },
+  "devDependencies": {
+    "@changesets/cli": "^2.29.8"
   }
 }

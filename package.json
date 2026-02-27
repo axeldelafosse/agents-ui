@@ -11,7 +11,7 @@
     "build:packages": "bun run --filter @axel-delafosse/protocol build && bun run --filter @axel-delafosse/agent-runtime build && bun run --filter @axel-delafosse/ui build",
     "build": "bun run build:packages && bun run --filter agents-ui build",
     "start": "bun run --filter agents-ui start",
-    "test": "bun run --filter agents-ui test",
+    "test": "bun run build:packages && bun run --filter agents-ui test",
     "update:codex-schemas": "bun run --filter agents-ui update:codex-schemas",
     "update:next-agents-md": "npx @next/codemod@canary agents-md",
     "check": "bun run --filter agents-ui check",

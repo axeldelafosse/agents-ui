@@ -1,9 +1,9 @@
 "use client"
 
-import { Fragment, useMemo } from "react"
+import { useCallback, useMemo } from "react"
+import { LegendList } from "@legendapp/list/react"
 import { DEBUG_MODE } from "@axel-delafosse/agent-runtime"
 import { cn } from "@axel-delafosse/ui/utils"
-import { Shimmer } from "./shimmer"
 import { ApprovalRequest } from "./approval-request"
 import { CollabAgent } from "./collab-agent"
 import { CommandExecution } from "./command-execution"
@@ -192,50 +192,31 @@ export function Feed({
 }: FeedProps) {
   const visibleItems = useMemo(() => dedupeUserMessageMirrors(items), [items])
 
-  if (visibleItems.length === 0) {
-    return (
-      <Shimmer className="text-sm" duration={2}>
-        Thinking
-      </Shimmer>
-    )
-  }
+  const renderItem = useCallback(
+    ({ item }: { item: StreamItem }) => (
+      <div className="mb-3" role="listitem">
+        {renderStreamItem({
+          item,
+          onApprove,
+          onApproveForSession,
+          onDeny,
+          onSubmitInput,
+        })}
+      </div>
+    ),
+    [onApprove, onApproveForSession, onDeny, onSubmitInput]
+  )
 
   return (
-    <ol
-      aria-atomic={false}
-      aria-label="Structured stream transcript"
-      aria-live="polite"
-      aria-relevant="additions text"
-      className={cn("space-y-3 pl-1", className)}
+    <LegendList
+      className={cn("pl-1", className)}
+      data={visibleItems}
+      estimatedItemSize={80}
+      keyExtractor={(item, index) => item.id || `${item.type}-${index}`}
+      recycleItems={false}
+      renderItem={renderItem}
       role="log"
-    >
-      {visibleItems.map((item, index) => {
-        // const previous = index > 0 ? visibleItems[index - 1] : undefined
-        const itemKey = item.id || `${item.type}-${index}`
-        return (
-          <Fragment key={itemKey}>
-            {/* {shouldRenderTurnBoundary(previous, item) ? (
-              <li aria-hidden className="list-none">
-                <div className="relative flex items-center justify-center py-1.5">
-                  <span className="h-px w-full bg-zinc-800" />
-                  <span className="absolute rounded bg-zinc-950 px-2 font-mono text-[10px] text-zinc-500 uppercase tracking-wide">
-                    {item.turnId}
-                  </span>
-                </div>
-              </li>
-            ) : null} */}
-            <li className="marker:text-zinc-600">
-              {renderStreamItem({
-                item,
-                onApprove,
-                onApproveForSession,
-                onDeny,
-                onSubmitInput,
-              })}
-            </li>
-          </Fragment>
-        )
-      })}
-    </ol>
+      useWindowScroll
+    />
   )
 }

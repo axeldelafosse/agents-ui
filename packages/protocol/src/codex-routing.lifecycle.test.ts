@@ -200,31 +200,13 @@ describe("codex-routing lifecycle parity", () => {
       expect(route).toEqual({})
     })
 
-    test("routes via conversationId fallback", () => {
-      const threads = new Map<string, string>([["thread-conv", "agent-conv"]])
-      const turns = new Map<string, string>()
-      const route = resolveCodexNotificationAgent(threads, turns, {
-        conversationId: "thread-conv",
-      })
-      expect(route.agentId).toBe("agent-conv")
-    })
-
-    test("routes via conversation_id snake_case fallback", () => {
+    test("routes via thread_id snake_case fallback", () => {
       const threads = new Map<string, string>([["thread-snake", "agent-snake"]])
       const turns = new Map<string, string>()
       const route = resolveCodexNotificationAgent(threads, turns, {
-        conversation_id: "thread-snake",
+        thread_id: "thread-snake",
       })
       expect(route.agentId).toBe("agent-snake")
-    })
-
-    test("routes via conversation.id object fallback", () => {
-      const threads = new Map<string, string>([["thread-obj", "agent-obj"]])
-      const turns = new Map<string, string>()
-      const route = resolveCodexNotificationAgent(threads, turns, {
-        conversation: { id: "thread-obj" },
-      })
-      expect(route.agentId).toBe("agent-obj")
     })
   })
 

@@ -22,3 +22,4 @@ screenshots/*
 apps/**/.next
 apps/**/storybook-static
 build-storybook.log
+debug-storybook.log

@@ -70,14 +70,7 @@ export type CodexKnownNotification =
 export type CodexKnownMethod = CodexKnownNotification["method"]
 
 type CodexParamCompatibility = {
-  argv?: string | string[]
-  args?: string | string[]
   command?: string | string[]
-  commandLine?: string | string[]
-  cmd?: string | string[]
-  conversation?: { id?: string }
-  conversationId?: string
-  conversation_id?: string
   content?: JsonValue
   data?: JsonValue
   delta?: JsonValue
@@ -95,12 +88,10 @@ type CodexParamCompatibility = {
   summaryText?: JsonValue
   summary_text?: JsonValue
   text?: JsonValue
-  thread?: { id?: string; preview?: string }
   threadId?: string
   threadName?: string | null
   thread_id?: string
   thread_name?: string | null
-  turn?: { id?: string }
   turnId?: string
   turn_id?: string
 } & Record<string, unknown>
@@ -187,30 +178,6 @@ function normalizeCommand(
   return joined || undefined
 }
 
-function normalizeUnknownCommand(value: unknown): string | undefined {
-  if (typeof value === "string") {
-    return normalizeCommand(value)
-  }
-  if (
-    Array.isArray(value) &&
-    value.every((entry) => typeof entry === "string")
-  ) {
-    return normalizeCommand(value)
-  }
-  return undefined
-}
-
-function readCommandLikeField(
-  params: CodexRpcParams | undefined,
-  key: string
-): string | undefined {
-  if (!params) {
-    return undefined
-  }
-  const record = params as Record<string, unknown>
-  return normalizeUnknownCommand(record[key])
-}
-
 export function codexIdFromParams(params?: CodexRpcParams): string | undefined {
   return readTrimmedString(params?.id)
 }
@@ -218,11 +185,7 @@ export function codexIdFromParams(params?: CodexRpcParams): string | undefined {
 export function codexTurnIdFromParams(
   params?: CodexRpcParams
 ): string | undefined {
-  return (
-    readTrimmedString(params?.turnId) ??
-    readTrimmedString(params?.turn_id) ??
-    readTrimmedString(params?.turn?.id)
-  )
+  return readTrimmedString(params?.turnId) ?? readTrimmedString(params?.turn_id)
 }
 
 export function codexThreadIdFromParams(
@@ -230,41 +193,23 @@ export function codexThreadIdFromParams(
 ): string | undefined {
   return (
     readTrimmedString(params?.threadId) ??
-    readTrimmedString(params?.thread_id) ??
-    readTrimmedString(params?.thread?.id) ??
-    readTrimmedString(params?.conversationId) ??
-    readTrimmedString(params?.conversation_id) ??
-    readTrimmedString(params?.conversation?.id)
+    readTrimmedString(params?.thread_id)
   )
 }
 
 export function codexThreadNameFromParams(
   params?: CodexRpcParams
 ): string | undefined {
-  const camel = params?.threadName
-  if (typeof camel === "string" && camel.trim()) {
-    return camel.trim()
-  }
-  const snake = params?.thread_name
-  if (typeof snake === "string" && snake.trim()) {
-    return snake.trim()
-  }
-  return undefined
+  return (
+    readTrimmedString(params?.threadName) ??
+    readTrimmedString(params?.thread_name)
+  )
 }
 
 export function codexCommandFromParams(
   params?: CodexRpcParams
 ): string | undefined {
-  return (
-    normalizeCommand(params?.command) ??
-    normalizeCommand(params?.cmd) ??
-    normalizeCommand(params?.args) ??
-    normalizeCommand(params?.argv) ??
-    normalizeCommand(params?.commandLine) ??
-    readCommandLikeField(params, "command_line") ??
-    readCommandLikeField(params, "line") ??
-    readCommandLikeField(params, "input")
-  )
+  return normalizeCommand(params?.command)
 }
 
 export function codexStatusFromParams(

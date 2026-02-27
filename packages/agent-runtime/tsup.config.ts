@@ -5,15 +5,7 @@ export default defineConfig({
   format: "esm",
   sourcemap: true,
   splitting: false,
-  dts: {
-    compilerOptions: {
-      baseUrl: ".",
-      paths: {
-        "@axel-delafosse/agent-runtime/*": ["./src/*"],
-        "@axel-delafosse/protocol/*": ["../protocol/src/*"],
-      },
-    },
-  },
+  dts: true,
   tsconfig: "tsconfig.build.json",
   external: ["@axel-delafosse/protocol", "react", "react-dom"],
 });

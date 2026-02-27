@@ -562,11 +562,6 @@ export default function PlaygroundPage() {
     [capture]
   )
 
-  const activeTab = useMemo(
-    () => tabs.find((tab) => tab.id === activeTabId) ?? tabs[0],
-    [activeTabId, tabs]
-  )
-
   useEffect(() => {
     const nextCapture = latestChatCapture() ?? null
     setCapture(nextCapture)

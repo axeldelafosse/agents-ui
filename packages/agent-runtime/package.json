@@ -24,7 +24,7 @@
   ],
   "exports": {
     ".": "./src/index.ts",
-    "./*": "./src/*"
+    "./*": "./src/*.ts"
   },
   "files": [
     "src"

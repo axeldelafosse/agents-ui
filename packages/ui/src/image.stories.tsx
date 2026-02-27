@@ -3,13 +3,13 @@ import {
   createStreamItem,
   streamImageItem,
 } from "@axel-delafosse/ui/__fixtures__/stream-items"
-import { Image } from "./image"
+import { AgentImage } from "./image"
 
 const meta = {
   args: {
     item: streamImageItem,
   },
-  component: Image,
+  component: AgentImage,
   decorators: [
     (Story) => (
       <div className="max-w-3xl rounded-lg bg-zinc-950 p-6 text-zinc-100">
@@ -18,7 +18,7 @@ const meta = {
     ),
   ],
   title: "UI/Image",
-} satisfies Meta<typeof Image>
+} satisfies Meta<typeof AgentImage>
 
 export default meta
 

@@ -2,9 +2,6 @@
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
 @import "streamdown/styles.css";
-@source "../../packages/ui/src";
-@source "../../packages/agent-runtime/src";
-@source "../../packages/protocol/src";
 @source "../node_modules/@axel-delafosse/ui/src";
 @source "../node_modules/@axel-delafosse/agent-runtime/src";
 @source "../node_modules/@axel-delafosse/protocol/src";

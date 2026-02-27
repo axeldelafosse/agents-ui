@@ -1,7 +1,7 @@
 import {
   MAX_RECONNECT_ATTEMPTS,
   MAX_RECONNECT_DELAY,
-} from "@axel-delafosse/agent-runtime/constants"
+} from "./constants"
 import type { ClaudeConn, CodexHub } from "./types"
 import { canScheduleReconnect, reconnectDelayMs } from "@axel-delafosse/protocol/reconnect"
 

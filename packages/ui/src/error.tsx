@@ -9,11 +9,11 @@ import { ItemShell } from "./item-shell"
 import { Markdown } from "./markdown"
 import type { StreamItem } from "./types"
 
-interface ErrorProps {
+interface AgentErrorProps {
   item: StreamItem
 }
 
-export function Error({ item }: ErrorProps) {
+export function AgentError({ item }: AgentErrorProps) {
   const message =
     getMarkdown(item.data, ["message", "text", "summary", "error"]) ??
     "An error occurred."

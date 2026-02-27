@@ -53,9 +53,9 @@ Each package is accessible via workspace/public package entry points.
 import { useAgentsRuntime } from "@axel-delafosse/agent-runtime"
 import { useCodexRuntime } from "@axel-delafosse/agent-runtime/hooks/use-codex-runtime"
 
-import { AgentTabBar } from "@axel-delafosse/ui/agent-tab-bar"
-import { StreamFeed } from "@axel-delafosse/ui/stream-feed"
-import { StreamMarkdown } from "@axel-delafosse/ui/stream-markdown"
+import { Feed } from "@axel-delafosse/ui/feed"
+import { Markdown } from "@axel-delafosse/ui/markdown"
+import { ApprovalRequest } from "@axel-delafosse/ui/approval-request"
 import { cn } from "@axel-delafosse/ui/utils"
 ```
 

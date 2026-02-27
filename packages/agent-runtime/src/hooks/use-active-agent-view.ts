@@ -5,7 +5,7 @@ import {
   hostFromUrl,
   shouldHidePlaceholderAgent,
   tabIdForAgent,
-} from "@axel-delafosse/agent-runtime/tab-utils"
+} from "../tab-utils"
 import type { Agent, AgentTab } from "../types"
 import type { StreamItem } from "@axel-delafosse/protocol/stream-items"
 

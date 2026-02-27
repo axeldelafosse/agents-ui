@@ -7,9 +7,9 @@ import { Shimmer } from "./shimmer"
 import { ApprovalRequest } from "./approval-request"
 import { CollabAgent } from "./collab-agent"
 import { CommandExecution } from "./command-execution"
-import { Error } from "./error"
+import { AgentError } from "./error"
 import { FileChange } from "./file-change"
-import { Image } from "./image"
+import { AgentImage } from "./image"
 import { McpToolCall } from "./mcp-tool-call"
 import { Message } from "./message"
 import { Plan } from "./plan"
@@ -150,7 +150,7 @@ const renderStreamItem = ({
     case "collab_agent":
       return <CollabAgent item={item} />
     case "image":
-      return <Image item={item} />
+      return <AgentImage item={item} />
     case "plan":
       return <Plan item={item} />
     case "reasoning":
@@ -172,7 +172,7 @@ const renderStreamItem = ({
     case "turn_diff":
       return <TurnDiff item={item} />
     case "error":
-      return <Error item={item} />
+      return <AgentError item={item} />
     case "status":
       return <Status item={item} />
     case "raw_item":

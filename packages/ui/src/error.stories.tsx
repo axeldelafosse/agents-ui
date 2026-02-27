@@ -3,13 +3,13 @@ import {
   createStreamItem,
   streamErrorItem,
 } from "@axel-delafosse/ui/__fixtures__/stream-items"
-import { Error } from "./error"
+import { AgentError } from "./error"
 
 const meta = {
   args: {
     item: streamErrorItem,
   },
-  component: Error,
+  component: AgentError,
   decorators: [
     (Story) => (
       <div className="max-w-3xl rounded-lg bg-zinc-950 p-6 text-zinc-100">
@@ -18,7 +18,7 @@ const meta = {
     ),
   ],
   title: "UI/Error",
-} satisfies Meta<typeof Error>
+} satisfies Meta<typeof AgentError>
 
 export default meta
 

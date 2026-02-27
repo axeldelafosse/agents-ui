@@ -5,25 +5,25 @@ import {
   latestChatCapture,
   storeChatCapture,
   type WsCaptureEvent,
-} from "@axel-delafosse/agent-runtime/capture"
+} from "../capture"
 import {
   DEBUG_EVENT_LIMIT,
   DISCOVERY_INTERVAL_MS,
-} from "@axel-delafosse/agent-runtime/constants"
+} from "../constants"
 import {
   parseOpenPorts,
   parseTailDiscovery,
   portToDiscover,
   probeUrl,
-} from "@axel-delafosse/agent-runtime/discovery"
-import { useActiveAgentView } from "@axel-delafosse/agent-runtime/hooks/use-active-agent-view"
-import { useClaudeRuntime } from "@axel-delafosse/agent-runtime/hooks/use-claude-runtime"
-import { useCodexRuntime } from "@axel-delafosse/agent-runtime/hooks/use-codex-runtime"
-import { codexHubs, reconnectTimers } from "@axel-delafosse/agent-runtime/runtime-state"
+} from "../discovery"
+import { useActiveAgentView } from "./use-active-agent-view"
+import { useClaudeRuntime } from "./use-claude-runtime"
+import { useCodexRuntime } from "./use-codex-runtime"
+import { codexHubs, reconnectTimers } from "../runtime-state"
 import {
   hostFromUrl,
   isTransientPlaceholderAgent,
-} from "@axel-delafosse/agent-runtime/tab-utils"
+} from "../tab-utils"
 import type {
   Agent,
   DiscoveredEndpoint,

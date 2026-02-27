@@ -3,7 +3,7 @@ import {
   CLAUDE_INIT_LINE_REGEX,
   CLAUDE_SESSION_LINE_REGEX,
   CODEX_THREAD_LINE_REGEX,
-} from "@axel-delafosse/agent-runtime/constants"
+} from "./constants"
 import type { DiscoveredEndpoint, Protocol } from "./types"
 
 function currentHost(): string {

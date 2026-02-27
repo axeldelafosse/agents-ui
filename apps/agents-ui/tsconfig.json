@@ -12,9 +12,7 @@
       ],
       "@axel-delafosse/codex-app-server-schemas/*": [
         "../../codex-app-server-schemas/*"
-      ],
-      "@/app/features/*": ["./app/features/*"],
-      "@/lib/*": ["./lib/*"]
+      ]
     }
   },
   "include": [

@@ -2,7 +2,7 @@
 
 import type { Dispatch, MutableRefObject, SetStateAction } from "react"
 import { useCallback, useMemo, useRef } from "react"
-import type { WsCaptureEvent } from "@axel-delafosse/agent-runtime/capture"
+import type { WsCaptureEvent } from "../capture"
 import {
   CODEX_NON_BUFFERED_TURN_METHODS,
   CODEX_NOOP_NOTIFICATION_METHODS,
@@ -16,20 +16,20 @@ import {
   CODEX_SUBAGENT_HINT_LIMIT,
   CODEX_SUBAGENT_HINT_TTL_MS,
   CODEX_TASK_DONE_METHODS,
-} from "@axel-delafosse/agent-runtime/constants"
-import { parseCodexThreadIdFromRawLine } from "@axel-delafosse/agent-runtime/discovery"
+} from "../constants"
+import { parseCodexThreadIdFromRawLine } from "../discovery"
 import {
   codexHubs,
   reconnectTimers,
   scheduleReconnect,
-} from "@axel-delafosse/agent-runtime/runtime-state"
+} from "../runtime-state"
 import {
   firstOpenTurnAgent,
   hostFromUrl,
   isCodexItemMessage,
   shortId,
   turnIdFromParams,
-} from "@axel-delafosse/agent-runtime/tab-utils"
+} from "../tab-utils"
 import type {
   Agent,
   CodexHub,

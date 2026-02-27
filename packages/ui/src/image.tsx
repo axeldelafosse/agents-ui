@@ -4,7 +4,7 @@ import { ItemShell } from "./item-shell"
 import { Markdown } from "./markdown"
 import type { StreamItem } from "./types"
 
-interface ImageProps {
+interface AgentImageProps {
   item: StreamItem
 }
 
@@ -54,7 +54,7 @@ function ImageContent({ alt, src }: { alt: string; src: string }) {
   return <p className="font-mono text-xs text-zinc-300">{src}</p>
 }
 
-export function Image({ item }: ImageProps) {
+export function AgentImage({ item }: AgentImageProps) {
   const nestedItem = asRecord(getValue(item.data, ["item", "source"]))
   const requestInput = asRecord(getValue(item.data, ["input"]))
   const src =

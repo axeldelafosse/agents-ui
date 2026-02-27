@@ -2,18 +2,18 @@
 
 import type { Dispatch, MutableRefObject, SetStateAction } from "react"
 import { useCallback, useRef } from "react"
-import type { WsCaptureEvent } from "@axel-delafosse/agent-runtime/capture"
-import { CLAUDE_PRETTY_MODE } from "@axel-delafosse/agent-runtime/constants"
+import type { WsCaptureEvent } from "../capture"
+import { CLAUDE_PRETTY_MODE } from "../constants"
 import {
   looksLikeClaudeInitLine,
   parseClaudeSessionIdFromRawLine,
-} from "@axel-delafosse/agent-runtime/discovery"
+} from "../discovery"
 import {
   claudeConns,
   reconnectTimers,
   scheduleReconnect,
-} from "@axel-delafosse/agent-runtime/runtime-state"
-import { shortId } from "@axel-delafosse/agent-runtime/tab-utils"
+} from "../runtime-state"
+import { shortId } from "../tab-utils"
 import type {
   Agent,
   ClaudeUIMessage,

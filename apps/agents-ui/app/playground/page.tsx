@@ -5,7 +5,6 @@ import {
   type ChatCaptureSnapshot,
   latestChatCapture,
 } from "@axel-delafosse/agent-runtime/capture"
-import { hostFromUrl } from "@axel-delafosse/agent-runtime/tab-utils"
 import type { AgentTab } from "@axel-delafosse/agent-runtime/types"
 import { Shimmer } from "@axel-delafosse/ui/shimmer"
 import type {
@@ -13,7 +12,6 @@ import type {
   StreamItem,
 } from "@axel-delafosse/ui/types"
 import dynamic from "next/dynamic"
-import Link from "next/link"
 import { useCallback, useEffect, useMemo, useState } from "react"
 import { AppSidebarShell } from "@/components/dashboard/app-sidebar-shell"
 
@@ -568,8 +566,6 @@ export default function PlaygroundPage() {
     () => tabs.find((tab) => tab.id === activeTabId) ?? tabs[0],
     [activeTabId, tabs]
   )
-
-  const activeHost = hostFromUrl(activeTab.representative.url)
 
   useEffect(() => {
     const nextCapture = latestChatCapture() ?? null

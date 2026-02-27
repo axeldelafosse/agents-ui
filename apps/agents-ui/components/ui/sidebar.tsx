@@ -184,12 +184,12 @@ function Sidebar({
       return
     }
 
-    const interactiveElement =
-      target instanceof Element
-        ? target
-        : target instanceof Text && target.parentElement
-          ? target.parentElement
-          : null
+    let interactiveElement: Element | null = null
+    if (target instanceof Element) {
+      interactiveElement = target
+    } else if (target instanceof Text) {
+      interactiveElement = target.parentElement
+    }
 
     const closestInteractiveElement = interactiveElement?.closest(
       "a, button, [role='button'], input, textarea, select, option"

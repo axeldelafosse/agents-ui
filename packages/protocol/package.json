@@ -1,6 +1,6 @@
 {
   "name": "@axel-delafosse/protocol",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "private": false,
   "description": "Shared protocol adapters, message parsing, and types for agents-ui transports.",
   "license": "MIT",
@@ -8,8 +8,16 @@
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
-    ".": { "bun": "./src/index.ts", "types": "./dist/index.d.ts", "import": "./dist/index.js" },
-    "./*": { "bun": "./src/*.ts", "types": "./dist/*.d.ts", "import": "./dist/*.js" }
+    ".": {
+      "bun": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./*": {
+      "bun": "./src/*.ts",
+      "types": "./dist/*.d.ts",
+      "import": "./dist/*.js"
+    }
   },
   "files": [
     "dist"

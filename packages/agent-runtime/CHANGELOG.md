@@ -1,5 +1,13 @@
 # @axel-delafosse/agent-runtime
 
+## 0.1.2
+
+### Patch Changes
+
+- 2bde1c1: Ship compiled JS
+- Updated dependencies [2bde1c1]
+  - @axel-delafosse/protocol@0.1.2
+
 ## 0.1.1
 
 ### Patch Changes

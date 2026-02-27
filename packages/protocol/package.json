@@ -1,6 +1,6 @@
 {
   "name": "@axel-delafosse/protocol",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": false,
   "description": "Shared protocol adapters, message parsing, and types for agents-ui transports.",
   "license": "MIT",
@@ -8,7 +8,9 @@
     ".": "./src/index.ts",
     "./*": "./src/*"
   },
-  "files": ["src"],
+  "files": [
+    "src"
+  ],
   "publishConfig": {
     "access": "public"
   },

@@ -1,0 +1,13 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["./src/*"],
+      "@axel-delafosse/protocol/*": ["./src/*"],
+      "@axel-delafosse/codex-app-server-schemas": ["../../codex-app-server-schemas"],
+      "@axel-delafosse/codex-app-server-schemas/*": ["../../codex-app-server-schemas/*"],
+    }
+  },
+  "include": ["src/**/*.ts", "src/**/*.tsx"]
+}

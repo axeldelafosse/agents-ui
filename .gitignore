@@ -18,5 +18,8 @@ backups/
 PLAN.md
 screenshots/*
 
+# workspace artifacts
+apps/**/.next
+apps/**/storybook-static
 storybook-static/
 build-storybook.log

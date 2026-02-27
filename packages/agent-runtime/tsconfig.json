@@ -1,0 +1,12 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["./src/*"],
+      "@axel-delafosse/agent-runtime/*": ["./src/*"],
+      "@axel-delafosse/protocol/*": ["../protocol/src/*"]
+    }
+  },
+  "include": ["src/**/*.ts", "src/**/*.tsx"]
+}

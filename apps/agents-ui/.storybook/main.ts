@@ -3,7 +3,7 @@ import type { StorybookConfig } from "@storybook/nextjs"
 const config: StorybookConfig = {
   stories: [
     "../components/**/*.stories.@(ts|tsx)",
-    "../../packages/ui/src/**/*.stories.@(ts|tsx)",
+    "../../../packages/ui/src/**/*.stories.@(ts|tsx)",
   ],
   framework: {
     name: "@storybook/nextjs",

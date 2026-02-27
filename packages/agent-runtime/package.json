@@ -1,0 +1,36 @@
+{
+  "name": "@axel-delafosse/agent-runtime",
+  "version": "0.1.0",
+  "private": false,
+  "description": "Shared agent runtime hooks, connection logic, and lifecycle types.",
+  "license": "MIT",
+  "peerDependencies": {
+    "@axel-delafosse/protocol": "workspace:*",
+    "react": "^19.2.4",
+    "react-dom": "^19.2.4"
+  },
+  "dependencies": {
+    "@axel-delafosse/protocol": "workspace:*"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "keywords": [
+    "agents",
+    "runtime",
+    "hooks",
+    "react",
+    "typescript"
+  ],
+  "exports": {
+    ".": "./src/index.ts",
+    "./*": "./src/*"
+  },
+  "files": ["src"],
+  "devDependencies": {
+    "@types/react": "^19.2.14"
+  },
+  "scripts": {
+    "test": "bun test"
+  }
+}

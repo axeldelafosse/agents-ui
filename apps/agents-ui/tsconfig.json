@@ -1,0 +1,25 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["./*"],
+      "@axel-delafosse/protocol/*": ["../../packages/protocol/src/*"],
+      "@axel-delafosse/ui/*": ["../../packages/ui/src/*"],
+      "@axel-delafosse/agent-runtime/*": ["../../packages/agent-runtime/src/*"],
+      "@axel-delafosse/codex-app-server-schemas": [
+        "../../codex-app-server-schemas"
+      ],
+      "@axel-delafosse/codex-app-server-schemas/*": [
+        "../../codex-app-server-schemas/*"
+      ]
+    }
+  },
+  "include": [
+    "**/*.ts",
+    "**/*.tsx",
+    "next-env.d.ts",
+    ".next/types/**/*.ts",
+    ".next/dev/types/**/*.ts"
+  ]
+}

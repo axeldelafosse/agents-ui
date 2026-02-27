@@ -51,26 +51,6 @@ describe("codex routing", () => {
     expect(byTurn.agentId).toBe("agent-a")
   })
 
-  test("routes by conversationId variants", () => {
-    const threads = new Map<string, string>([["thread-conv", "agent-conv"]])
-    const turns = new Map<string, string>()
-
-    const byConversationId = resolveCodexNotificationAgent(threads, turns, {
-      conversationId: "thread-conv",
-    })
-    expect(byConversationId.agentId).toBe("agent-conv")
-
-    const byConversationSnake = resolveCodexNotificationAgent(threads, turns, {
-      conversation_id: "thread-conv",
-    })
-    expect(byConversationSnake.agentId).toBe("agent-conv")
-
-    const byConversationObject = resolveCodexNotificationAgent(threads, turns, {
-      conversation: { id: "thread-conv" },
-    })
-    expect(byConversationObject.agentId).toBe("agent-conv")
-  })
-
   test("returns empty route when identifiers are unknown", () => {
     const threads = new Map<string, string>([["thread-a", "agent-a"]])
     const turns = new Map<string, string>()

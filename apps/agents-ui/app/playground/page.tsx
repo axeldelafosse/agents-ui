@@ -7,7 +7,7 @@ import {
 } from "@axel-delafosse/agent-runtime/capture"
 import { hostFromUrl } from "@axel-delafosse/agent-runtime/tab-utils"
 import type { AgentTab } from "@axel-delafosse/agent-runtime/types"
-import { Feed } from "@axel-delafosse/ui/feed"
+import dynamic from "next/dynamic"
 import { Shimmer } from "@axel-delafosse/ui/shimmer"
 import type {
   StreamApprovalInputValue,
@@ -24,7 +24,14 @@ const CAPTURE_TAB_PREFIX = "capture:"
 const BASE_TIMESTAMP = Date.UTC(2026, 1, 26, 18, 0, 0)
 const PLACEHOLDER_IMAGE = `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(
   '<svg xmlns="http://www.w3.org/2000/svg" width="900" height="450" viewBox="0 0 900 450"><defs><linearGradient id="bg" x1="0" x2="1" y1="0" y2="1"><stop offset="0" stop-color="#0f172a"/><stop offset="1" stop-color="#1d4ed8"/></linearGradient></defs><rect width="900" height="450" fill="url(#bg)"/><circle cx="250" cy="170" r="90" fill="#38bdf8" opacity="0.35"/><circle cx="640" cy="260" r="110" fill="#22c55e" opacity="0.28"/><text x="52" y="95" fill="#e2e8f0" font-family="monospace" font-size="30">Codex Playground Snapshot</text><text x="52" y="140" fill="#cbd5e1" font-family="monospace" font-size="19">Stream item rendering reference</text></svg>'
-)}`
+    )}`
+
+const Feed = dynamic(
+  () => import("@axel-delafosse/ui/feed").then((module) => module.Feed),
+  {
+    ssr: false
+  }
+)
 
 const captureTabId = (captureId: string, agentId: string): string =>
   `${CAPTURE_TAB_PREFIX}${captureId}:${agentId}`

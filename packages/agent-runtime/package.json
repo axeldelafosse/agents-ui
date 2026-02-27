@@ -1,6 +1,6 @@
 {
   "name": "@axel-delafosse/agent-runtime",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": false,
   "description": "Shared agent runtime hooks, connection logic, and lifecycle types.",
   "license": "MIT",
@@ -26,7 +26,9 @@
     ".": "./src/index.ts",
     "./*": "./src/*"
   },
-  "files": ["src"],
+  "files": [
+    "src"
+  ],
   "devDependencies": {
     "@types/react": "^19.2.14"
   },

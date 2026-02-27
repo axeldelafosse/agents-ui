@@ -4,12 +4,15 @@
   "private": false,
   "description": "Shared protocol adapters, message parsing, and types for agents-ui transports.",
   "license": "MIT",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
   "exports": {
-    ".": "./src/index.ts",
-    "./*": "./src/*.ts"
+    ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" },
+    "./*": { "types": "./dist/*.d.ts", "import": "./dist/*.js" }
   },
   "files": [
-    "src"
+    "dist"
   ],
   "publishConfig": {
     "access": "public"
@@ -22,6 +25,7 @@
     "streaming"
   ],
   "scripts": {
+    "build": "tsup",
     "test": "bun test"
   },
   "devDependencies": {

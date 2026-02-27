@@ -7,8 +7,9 @@
     "dev": "bun run --filter agents-ui dev",
     "changeset": "changeset",
     "changeset:version": "changeset version",
-    "changeset:publish": "changeset publish",
-    "build": "bun run --filter agents-ui build",
+    "changeset:publish": "bun run build:packages && changeset publish",
+    "build:packages": "bun run --filter @axel-delafosse/protocol build && bun run --filter @axel-delafosse/agent-runtime build && bun run --filter @axel-delafosse/ui build",
+    "build": "bun run build:packages && bun run --filter agents-ui build",
     "start": "bun run --filter agents-ui start",
     "test": "bun run --filter agents-ui test",
     "update:codex-schemas": "bun run --filter agents-ui update:codex-schemas",
@@ -21,6 +22,8 @@
     "start:relay-server": "bun run --filter relay-server start"
   },
   "devDependencies": {
-    "@changesets/cli": "^2.29.8"
+    "@changesets/cli": "^2.29.8",
+    "tsup": "8.5.1",
+    "typescript": "5.9.3"
   }
 }

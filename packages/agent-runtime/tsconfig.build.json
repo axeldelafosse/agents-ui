@@ -1,0 +1,18 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "baseUrl": ".",
+    "noEmit": false,
+    "declaration": true,
+    "declarationMap": true,
+    "allowImportingTsExtensions": false,
+    "incremental": false,
+    "typeRoots": ["../../node_modules/.bun/node_modules/@types"],
+    "paths": {
+      "@axel-delafosse/agent-runtime/*": ["./src/*"],
+      "@axel-delafosse/protocol/*": ["../protocol/src/*"]
+    }
+  },
+  "include": ["src/**/*.ts"],
+  "exclude": ["node_modules", "src/**/*.test.ts"]
+}

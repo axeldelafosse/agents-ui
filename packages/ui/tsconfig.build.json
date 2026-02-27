@@ -1,0 +1,25 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "baseUrl": ".",
+    "noEmit": false,
+    "declaration": true,
+    "declarationMap": true,
+    "allowImportingTsExtensions": false,
+    "incremental": false,
+    "typeRoots": ["../../node_modules/.bun/node_modules/@types"],
+    "paths": {
+      "@axel-delafosse/ui/*": ["./src/*"],
+      "@axel-delafosse/agent-runtime/*": ["../agent-runtime/src/*"],
+      "@axel-delafosse/protocol/*": ["../protocol/src/*"]
+    }
+  },
+  "include": ["src/**/*.ts", "src/**/*.tsx"],
+  "exclude": [
+    "node_modules",
+    "src/**/*.test.ts",
+    "src/**/*.test.tsx",
+    "src/**/*.stories.tsx",
+    "src/__fixtures__/**"
+  ]
+}

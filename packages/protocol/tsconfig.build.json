@@ -1,0 +1,19 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "baseUrl": ".",
+    "noEmit": false,
+    "declaration": true,
+    "declarationMap": true,
+    "allowImportingTsExtensions": false,
+    "incremental": false,
+    "typeRoots": ["../../node_modules/.bun/node_modules/@types"],
+    "paths": {
+      "@axel-delafosse/protocol/*": ["./src/*"],
+      "@axel-delafosse/codex-app-server-schemas": ["../../codex-app-server-schemas"],
+      "@axel-delafosse/codex-app-server-schemas/*": ["../../codex-app-server-schemas/*"]
+    }
+  },
+  "include": ["src/**/*.ts"],
+  "exclude": ["node_modules", "src/**/*.test.ts"]
+}

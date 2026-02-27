@@ -22,17 +22,21 @@
     "react",
     "typescript"
   ],
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
   "exports": {
-    ".": "./src/index.ts",
-    "./*": "./src/*"
+    ".": { "bun": "./src/index.ts", "types": "./dist/index.d.ts", "import": "./dist/index.js" },
+    "./*": { "bun": "./src/*.ts", "types": "./dist/*.d.ts", "import": "./dist/*.js" }
   },
   "files": [
-    "src"
+    "dist"
   ],
   "devDependencies": {
     "@types/react": "^19.2.14"
   },
   "scripts": {
+    "build": "tsup",
     "test": "bun test"
   }
 }

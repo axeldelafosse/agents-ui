@@ -128,6 +128,11 @@ export function useStreamPacing<T>(items: readonly T[]): readonly T[] {
 
       const queue = queueRef.current
       if (queue.length === 0) {
+        // Reset to smooth so the next burst starts fresh
+        if (modeRef.current === "catchup") {
+          modeRef.current = "smooth"
+          catchUpExitTimeRef.current = 0
+        }
         rafRef.current = requestAnimationFrame(tick)
         return
       }

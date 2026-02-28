@@ -1,14 +1,15 @@
 "use client"
 
+import type { CodexThreadListResult } from "@axel-delafosse/agent-runtime/hooks/use-codex-runtime"
 import {
   shortId,
   statusIndicatorClass,
 } from "@axel-delafosse/agent-runtime/tab-utils"
 import type { AgentTab } from "@axel-delafosse/agent-runtime/types"
 import { cn } from "@axel-delafosse/ui/utils"
-import { EllipsisVertical } from "lucide-react"
+import { ChevronDown, ChevronRight, EllipsisVertical } from "lucide-react"
 import type { FormEvent, MouseEvent } from "react"
-import { useCallback, useState } from "react"
+import { useCallback, useMemo, useState } from "react"
 import {
   Sidebar,
   SidebarContent,
@@ -31,9 +32,14 @@ interface AppSidebarActions {
 interface AppSidebarProps extends AppSidebarActions {
   activeTabId: string
   autoFollow: boolean
+  codexHubUrl?: string
+  listCodexThreads?: (hubUrl: string, cursor?: string) => void
   onAutoFollowChange: (next: boolean) => void
   onTabChange: (tabId: string) => void
+  resumeCodexThread?: (hubUrl: string, threadId: string) => void
   tabs: readonly AgentTab[]
+  threadListData?: CodexThreadListResult
+  threadListVersion?: number
 }
 
 type TabKebabMenuProps = AppSidebarActions & {
@@ -264,15 +270,147 @@ function SidebarTabItem({
   )
 }
 
+function formatTimestamp(unixSeconds: number): string {
+  if (!unixSeconds) {
+    return ""
+  }
+  const date = new Date(unixSeconds * 1000)
+  return date.toLocaleString(undefined, {
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  })
+}
+
+function HistorySection({
+  codexHubUrl,
+  listCodexThreads,
+  resumeCodexThread,
+  tabs,
+  threadListData,
+  threadListVersion: _threadListVersion,
+}: {
+  codexHubUrl: string
+  listCodexThreads: (hubUrl: string, cursor?: string) => void
+  resumeCodexThread: (hubUrl: string, threadId: string) => void
+  tabs: readonly AgentTab[]
+  threadListData?: CodexThreadListResult
+  threadListVersion?: number
+}) {
+  const [expanded, setExpanded] = useState(false)
+  const { isMobile, setOpenMobile } = useSidebar()
+
+  const handleToggle = useCallback(() => {
+    setExpanded((prev) => {
+      if (!prev) {
+        listCodexThreads(codexHubUrl)
+      }
+      return !prev
+    })
+  }, [codexHubUrl, listCodexThreads])
+
+  const activeThreadIds = useMemo(() => {
+    const ids = new Set<string>()
+    for (const tab of tabs) {
+      for (const agent of tab.agents) {
+        if (agent.threadId) {
+          ids.add(agent.threadId)
+        }
+      }
+    }
+    return ids
+  }, [tabs])
+
+  const threads = threadListData?.data ?? []
+  const filteredThreads = threads.filter((t) => !activeThreadIds.has(t.id))
+  const hasMore = threadListData?.nextCursor != null
+
+  const handleResume = useCallback(
+    (threadId: string) => {
+      resumeCodexThread(codexHubUrl, threadId)
+      if (isMobile) {
+        setOpenMobile(false)
+      }
+    },
+    [codexHubUrl, isMobile, resumeCodexThread, setOpenMobile]
+  )
+
+  const handleLoadMore = useCallback(() => {
+    listCodexThreads(codexHubUrl, threadListData?.nextCursor ?? undefined)
+  }, [codexHubUrl, listCodexThreads, threadListData?.nextCursor])
+
+  return (
+    <SidebarGroup>
+      <SidebarGroupLabel
+        className="cursor-pointer select-none"
+        onClick={handleToggle}
+      >
+        {expanded ? (
+          <ChevronDown className="mr-1 size-3" />
+        ) : (
+          <ChevronRight className="mr-1 size-3" />
+        )}
+        History
+      </SidebarGroupLabel>
+      {expanded && (
+        <SidebarMenu>
+          {filteredThreads.length === 0 && (
+            <SidebarMenuItem>
+              <SidebarMenuButton disabled title="No past threads">
+                No past threads
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+          )}
+          {filteredThreads.map((thread) => (
+            <SidebarMenuItem key={thread.id}>
+              <SidebarMenuButton
+                className="flex-col items-start gap-0"
+                onClick={() => handleResume(thread.id)}
+                title={thread.preview || shortId(thread.id)}
+              >
+                <span className="w-full truncate text-xs">
+                  {thread.preview || shortId(thread.id)}
+                </span>
+                <span className="text-[10px] text-zinc-500">
+                  {shortId(thread.id)}
+                  {thread.updatedAt
+                    ? ` \u00b7 ${formatTimestamp(thread.updatedAt)}`
+                    : ""}
+                </span>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+          ))}
+          {hasMore && (
+            <SidebarMenuItem>
+              <SidebarMenuButton
+                className="justify-center text-xs text-zinc-400"
+                onClick={handleLoadMore}
+              >
+                Load more
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+          )}
+        </SidebarMenu>
+      )}
+    </SidebarGroup>
+  )
+}
+
 export function AppSidebar({
   activeTabId,
   autoFollow,
+  codexHubUrl,
+  listCodexThreads,
   onArchiveThread,
   onAutoFollowChange,
   onForkThread,
   onRenameThread,
   onTabChange,
+  resumeCodexThread,
   tabs,
+  threadListData,
+  threadListVersion,
 }: AppSidebarProps) {
   const { state } = useSidebar()
   const isCollapsed = state === "collapsed"
@@ -325,6 +463,16 @@ export function AppSidebar({
             )}
           </SidebarMenu>
         </SidebarGroup>
+        {codexHubUrl && listCodexThreads && resumeCodexThread && (
+          <HistorySection
+            codexHubUrl={codexHubUrl}
+            listCodexThreads={listCodexThreads}
+            resumeCodexThread={resumeCodexThread}
+            tabs={tabs}
+            threadListData={threadListData}
+            threadListVersion={threadListVersion}
+          />
+        )}
       </SidebarContent>
 
       <SidebarFooter className={isCollapsed ? "hidden" : ""}>

@@ -46,7 +46,7 @@ export interface CodexHub {
   lineBuffer: string
   pending: Map<
     number,
-    { agentId?: string; spawnThread?: boolean; type: string; threadId?: string }
+    { agentId?: string; cursor?: string; spawnThread?: boolean; type: string; threadId?: string }
   > // rpcId -> handler context
   pendingMsgs: Map<string, string> // agentId -> queued message (before threadId ready)
   pendingSubagentParents: Array<{ agentId: string; expiresAt: number }>

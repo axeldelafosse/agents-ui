@@ -1987,3 +1987,59 @@ export function adaptCodexMessageToStreamItems(
   })
   return [created.action]
 }
+
+/**
+ * Convert historical thread turns/items (from a thread/resume response) into
+ * StreamItemActions by synthesising item/started + item/completed notifications
+ * for each ThreadItem and feeding them through the existing adapter.
+ */
+export function adaptCodexThreadHistoryToStreamItems(
+  state: CodexStreamAdapterState,
+  threadId: string,
+  turns: ReadonlyArray<{
+    id: string
+    items: ReadonlyArray<Record<string, unknown>>
+    status?: string
+  }>,
+  agentId: string,
+  options: CodexStreamAdapterOptions = {}
+): StreamItemAction[] {
+  const allActions: StreamItemAction[] = []
+
+  for (const turn of turns) {
+    const turnId = turn.id
+
+    for (const item of turn.items) {
+      // Synthesise item/started
+      const startedActions = adaptCodexMessageToStreamItems(
+        state,
+        {
+          agentId,
+          method: "item/started",
+          params: { threadId, turnId, item } as CodexRpcParams,
+        },
+        options
+      )
+      allActions.push(...startedActions)
+
+      // Synthesise item/completed
+      const completedActions = adaptCodexMessageToStreamItems(
+        state,
+        {
+          agentId,
+          method: "item/completed",
+          params: {
+            threadId,
+            turnId,
+            item,
+            itemId: readString(item.id),
+          } as CodexRpcParams,
+        },
+        options
+      )
+      allActions.push(...completedActions)
+    }
+  }
+
+  return allActions
+}

@@ -2,7 +2,6 @@
 
 import { DEBUG_MODE } from "@axel-delafosse/agent-runtime/constants"
 import { useAgentsRuntime } from "@axel-delafosse/agent-runtime/hooks/use-agents-runtime"
-import type { Agent } from "@axel-delafosse/agent-runtime/types"
 import { Feed } from "@axel-delafosse/ui/feed"
 import { Shimmer } from "@axel-delafosse/ui/shimmer"
 import type {
@@ -10,10 +9,9 @@ import type {
   StreamItem,
 } from "@axel-delafosse/ui/types"
 import Link from "next/link"
-import { useCallback, useState } from "react"
+import { useCallback } from "react"
 import { Streamdown } from "streamdown"
-import { AgentTabBar } from "@/components/ui/agent-tab-bar"
-import { ThreadBrowser } from "@/components/ui/thread-browser"
+import { AppSidebarShell } from "@/components/dashboard/app-sidebar-shell"
 
 export default function Page() {
   const {
@@ -22,10 +20,10 @@ export default function Page() {
     activeOutput,
     activeStreamItems,
     activeTab,
-    agents,
     archiveCodexThread,
     autoFollow,
     captureEnabled,
+    codexHubUrl,
     forkCodexThread,
     handleApprovalDecision,
     handleApprovalInput,
@@ -41,25 +39,9 @@ export default function Page() {
     steerCodexTurn,
     stopCaptureAndSave,
     threadListResult,
+    threadListVersion,
     visibleTabs,
   } = useAgentsRuntime()
-
-  const [threadBrowserOpen, setThreadBrowserOpen] = useState(false)
-
-  const codexHubUrl = agents.find(
-    (agent: Agent) => agent.protocol === "codex"
-  )?.url
-
-  const openThreadBrowser = useCallback(() => {
-    if (codexHubUrl) {
-      listCodexThreads(codexHubUrl)
-    }
-    setThreadBrowserOpen(true)
-  }, [codexHubUrl, listCodexThreads])
-
-  const closeThreadBrowser = useCallback(() => {
-    setThreadBrowserOpen(false)
-  }, [])
 
   const onApprove = useCallback(
     (item: StreamItem) => handleApprovalResponse(item, true),
@@ -83,25 +65,24 @@ export default function Page() {
   )
 
   const hasStreamItems = activeStreamItems.length > 0
-  const showThreadBrowser = threadBrowserOpen && codexHubUrl
 
   return (
-    <main>
-      <div className="flex items-center justify-between p-4">
-        <div className="flex items-center gap-3">
-          <p className="text-nowrap font-bold text-lg tracking-tight">
-            Agents UI
-          </p>
-          {codexHubUrl && !threadBrowserOpen && (
-            <button
-              className="rounded-md border border-zinc-700 bg-zinc-900 px-2.5 py-1.5 text-xs text-zinc-100 hover:bg-zinc-800"
-              onClick={openThreadBrowser}
-              type="button"
-            >
-              Browse Threads
-            </button>
-          )}
-        </div>
+    <AppSidebarShell
+      activeTabId={activeTab?.id ?? ""}
+      autoFollow={autoFollow}
+      codexHubUrl={codexHubUrl}
+      listCodexThreads={listCodexThreads}
+      onArchiveThread={archiveCodexThread}
+      onAutoFollowChange={setAutoFollow}
+      onForkThread={forkCodexThread}
+      onRenameThread={setCodexThreadName}
+      onTabChange={setSelectedTabId}
+      resumeCodexThread={resumeCodexThread}
+      tabs={visibleTabs}
+      threadListData={threadListResult.current}
+      threadListVersion={threadListVersion}
+    >
+      <div className="flex items-center justify-between">
         {DEBUG_MODE && (
           <div className="flex flex-wrap items-center justify-end gap-2">
             <p className="ml-2 text-right text-zinc-400">
@@ -136,96 +117,69 @@ export default function Page() {
           </div>
         )}
       </div>
-      <div>
-        {visibleTabs.length > 0 && activeTab && (
-          <AgentTabBar
-            activeTabId={activeTab.id}
-            autoFollow={autoFollow}
-            onArchiveThread={archiveCodexThread}
-            onAutoFollowChange={setAutoFollow}
-            onForkThread={forkCodexThread}
-            onRenameThread={setCodexThreadName}
-            onTabChange={setSelectedTabId}
-            tabs={visibleTabs}
+      <div className="mx-auto max-w-3xl bg-zinc-950 p-4">
+        {!activeAgent && (
+          <Shimmer className="text-sm" duration={2}>
+            Looking for background agents
+          </Shimmer>
+        )}
+        {activeAgent && !hasStreamItems && !activeOutput && (
+          <Shimmer className="text-sm" duration={2}>
+            Thinking
+          </Shimmer>
+        )}
+        {activeAgent?.protocol === "codex" &&
+          activeAgent.threadStatus === "active" && (
+            <div className="mb-3 flex items-center gap-2">
+              <form
+                className="flex min-w-0 flex-1 items-center gap-2"
+                onSubmit={(e) => {
+                  e.preventDefault()
+                  const input = new FormData(e.currentTarget).get("steerInput")
+                  if (typeof input === "string" && input.trim()) {
+                    steerCodexTurn(activeAgent.id, input.trim())
+                    e.currentTarget.reset()
+                  }
+                }}
+              >
+                <input
+                  autoComplete="off"
+                  className="min-w-0 flex-1 rounded-md border border-zinc-700 bg-zinc-900 px-3 py-1.5 text-sm text-zinc-100 placeholder:text-zinc-500"
+                  name="steerInput"
+                  placeholder="Steer this turn..."
+                  type="text"
+                />
+                <button
+                  className="rounded-md border border-blue-700/60 bg-blue-900/30 px-3 py-1.5 text-blue-100 text-sm"
+                  type="submit"
+                >
+                  Steer
+                </button>
+              </form>
+              <button
+                className="rounded-md border border-red-700/60 bg-red-900/30 px-3 py-1.5 text-red-100 text-sm"
+                onClick={() => interruptCodexTurn(activeAgent.id)}
+                type="button"
+              >
+                Stop
+              </button>
+            </div>
+          )}
+        {hasStreamItems && (
+          <Feed
+            items={activeStreamItems}
+            onApprove={onApprove}
+            onApproveForSession={onApproveForSession}
+            onDeny={onDeny}
+            onSubmitInput={onSubmitInput}
           />
         )}
-        {showThreadBrowser && (
-          <div className="mx-auto max-w-3xl px-4 pt-4">
-            <ThreadBrowser
-              hubUrl={codexHubUrl}
-              listCodexThreads={listCodexThreads}
-              onClose={closeThreadBrowser}
-              resumeCodexThread={resumeCodexThread}
-              threadListResult={threadListResult}
-            />
-          </div>
+        {!hasStreamItems && activeOutput && (
+          <Streamdown className="text-sm leading-relaxed">
+            {activeOutput}
+          </Streamdown>
         )}
-        <div className="mx-auto max-w-3xl bg-zinc-950 p-4">
-          {!activeAgent && (
-            <Shimmer className="text-sm" duration={2}>
-              Looking for background agents
-            </Shimmer>
-          )}
-          {activeAgent && !hasStreamItems && !activeOutput && (
-            <Shimmer className="text-sm" duration={2}>
-              Thinking
-            </Shimmer>
-          )}
-          {activeAgent?.protocol === "codex" &&
-            activeAgent.threadStatus === "active" && (
-              <div className="mb-3 flex items-center gap-2">
-                <form
-                  className="flex min-w-0 flex-1 items-center gap-2"
-                  onSubmit={(e) => {
-                    e.preventDefault()
-                    const input = new FormData(e.currentTarget).get(
-                      "steerInput"
-                    )
-                    if (typeof input === "string" && input.trim()) {
-                      steerCodexTurn(activeAgent.id, input.trim())
-                      e.currentTarget.reset()
-                    }
-                  }}
-                >
-                  <input
-                    autoComplete="off"
-                    className="min-w-0 flex-1 rounded-md border border-zinc-700 bg-zinc-900 px-3 py-1.5 text-sm text-zinc-100 placeholder:text-zinc-500"
-                    name="steerInput"
-                    placeholder="Steer this turn..."
-                    type="text"
-                  />
-                  <button
-                    className="rounded-md border border-blue-700/60 bg-blue-900/30 px-3 py-1.5 text-blue-100 text-sm"
-                    type="submit"
-                  >
-                    Steer
-                  </button>
-                </form>
-                <button
-                  className="rounded-md border border-red-700/60 bg-red-900/30 px-3 py-1.5 text-red-100 text-sm"
-                  onClick={() => interruptCodexTurn(activeAgent.id)}
-                  type="button"
-                >
-                  Stop
-                </button>
-              </div>
-            )}
-          {hasStreamItems && (
-            <Feed
-              items={activeStreamItems}
-              onApprove={onApprove}
-              onApproveForSession={onApproveForSession}
-              onDeny={onDeny}
-              onSubmitInput={onSubmitInput}
-            />
-          )}
-          {!hasStreamItems && activeOutput && (
-            <Streamdown className="text-sm leading-relaxed">
-              {activeOutput}
-            </Streamdown>
-          )}
-        </div>
       </div>
-    </main>
+    </AppSidebarShell>
   )
 }

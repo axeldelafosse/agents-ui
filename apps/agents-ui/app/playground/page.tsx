@@ -5,7 +5,6 @@ import {
   type ChatCaptureSnapshot,
   latestChatCapture,
 } from "@axel-delafosse/agent-runtime/capture"
-import { hostFromUrl } from "@axel-delafosse/agent-runtime/tab-utils"
 import type { AgentTab } from "@axel-delafosse/agent-runtime/types"
 import { Shimmer } from "@axel-delafosse/ui/shimmer"
 import type {
@@ -13,9 +12,8 @@ import type {
   StreamItem,
 } from "@axel-delafosse/ui/types"
 import dynamic from "next/dynamic"
-import Link from "next/link"
 import { useCallback, useEffect, useMemo, useState } from "react"
-import { AgentTabBar } from "@/components/ui/agent-tab-bar"
+import { AppSidebarShell } from "@/components/dashboard/app-sidebar-shell"
 
 const CODEX_TAB_ID = "tab-codex-playground"
 const CLAUDE_TAB_ID = "tab-claude-playground"
@@ -564,13 +562,6 @@ export default function PlaygroundPage() {
     [capture]
   )
 
-  const activeTab = useMemo(
-    () => tabs.find((tab) => tab.id === activeTabId) ?? tabs[0],
-    [activeTabId, tabs]
-  )
-
-  const activeHost = hostFromUrl(activeTab.representative.url)
-
   useEffect(() => {
     const nextCapture = latestChatCapture() ?? null
     setCapture(nextCapture)
@@ -657,34 +648,14 @@ export default function PlaygroundPage() {
   )
 
   return (
-    <main className="min-h-screen">
-      <div className="flex flex-wrap items-center justify-between gap-3 p-4">
-        <div>
-          <h1 className="font-bold text-lg tracking-tight">Agents UI</h1>
-        </div>
-        <div className="flex items-center gap-3">
-          <p className="text-right text-sm text-zinc-400">
-            {activeTab.representative.protocol} @ {activeHost} (
-            {activeTab.representative.status})
-          </p>
-          <Link
-            className="rounded-md border border-zinc-700 bg-zinc-900 px-2.5 py-1.5 text-xs text-zinc-100"
-            href="/"
-          >
-            Back to live view
-          </Link>
-        </div>
-      </div>
-
-      <AgentTabBar
-        activeTabId={activeTabId}
-        autoFollow={autoFollow}
-        onAutoFollowChange={setAutoFollow}
-        onTabChange={handleTabChange}
-        tabs={tabs}
-      />
-
-      <div className="mx-auto max-w-3xl space-y-3 p-4">
+    <AppSidebarShell
+      activeTabId={activeTabId}
+      autoFollow={autoFollow}
+      onAutoFollowChange={setAutoFollow}
+      onTabChange={handleTabChange}
+      tabs={tabs}
+    >
+      <div className="mx-auto mt-4 max-w-3xl space-y-3">
         <section>
           {items.length > 0 ? (
             <Feed
@@ -700,6 +671,6 @@ export default function PlaygroundPage() {
           )}
         </section>
       </div>
-    </main>
+    </AppSidebarShell>
   )
 }

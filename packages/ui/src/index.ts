@@ -19,6 +19,7 @@ export {
   mergeSummaryLines,
   summarizeExploringItem,
 } from "./exploring-line-summary"
+export { DiffView } from "./diff-view"
 export { FileChange } from "./file-change"
 export { ItemShell, type ItemShellProps } from "./item-shell"
 export { Markdown } from "./markdown"

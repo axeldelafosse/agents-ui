@@ -436,6 +436,7 @@ export function useAgentsRuntime() {
 
   const {
     archiveCodexThread,
+    codexHubUrl,
     codexOutputStates,
     codexThreadAgentIds,
     compactCodexThread,
@@ -450,6 +451,7 @@ export function useAgentsRuntime() {
     setCodexThreadName,
     steerCodexTurn,
     threadListResult,
+    threadListVersion,
     unarchiveCodexThread,
   } = useCodexRuntime({
     agentsRef,
@@ -715,6 +717,7 @@ export function useAgentsRuntime() {
     agents,
     archiveCodexThread,
     autoFollow,
+    codexHubUrl,
     captureEnabled,
     compactCodexThread,
     forkCodexThread,
@@ -733,6 +736,7 @@ export function useAgentsRuntime() {
     steerCodexTurn,
     stopCaptureAndSave,
     threadListResult,
+    threadListVersion,
     unarchiveCodexThread,
     setAutoFollow,
     setSelectedTabId,

@@ -119,17 +119,17 @@ for (const port of ports) {
         if (d.type === "claude") {
           r.claude = ws
           console.log(`[${d.port}] claude code connected`)
-          r.broadcastJson({ type: "status", text: "claude code connected" })
+          // r.broadcastJson({ type: "status", text: "claude code connected" })
           return
         }
         r.frontends.add(ws)
         console.log(`[${d.port}] frontend connected`)
-        if (r.claude) {
-          r.broadcastJson({
-            type: "status",
-            text: "claude code is connected",
-          })
-        }
+        // if (r.claude) {
+        //   r.broadcastJson({
+        //     type: "status",
+        //     text: "claude code is connected",
+        //   })
+        // }
       },
       message(ws, raw) {
         const text = typeof raw === "string" ? raw : Buffer.from(raw).toString()
@@ -153,7 +153,7 @@ for (const port of ports) {
         if (d.type === "claude") {
           r.claude = null
           console.log(`[${d.port}] claude code disconnected`)
-          r.broadcastJson({ type: "status", text: "claude code disconnected" })
+          // r.broadcastJson({ type: "status", text: "claude code disconnected" })
           return
         }
         r.frontends.delete(ws)

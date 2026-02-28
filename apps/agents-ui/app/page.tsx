@@ -2,7 +2,6 @@
 
 import { DEBUG_MODE } from "@axel-delafosse/agent-runtime/constants"
 import { useAgentsRuntime } from "@axel-delafosse/agent-runtime/hooks/use-agents-runtime"
-import type { Agent } from "@axel-delafosse/agent-runtime/types"
 import { Feed } from "@axel-delafosse/ui/feed"
 import { Shimmer } from "@axel-delafosse/ui/shimmer"
 import type {
@@ -10,10 +9,9 @@ import type {
   StreamItem,
 } from "@axel-delafosse/ui/types"
 import Link from "next/link"
-import { useCallback, useState } from "react"
+import { useCallback } from "react"
 import { Streamdown } from "streamdown"
 import { AppSidebarShell } from "@/components/dashboard/app-sidebar-shell"
-import { ThreadBrowser } from "@/components/ui/thread-browser"
 
 export default function Page() {
   const {
@@ -22,10 +20,10 @@ export default function Page() {
     activeOutput,
     activeStreamItems,
     activeTab,
-    agents,
     archiveCodexThread,
     autoFollow,
     captureEnabled,
+    codexHubUrl,
     forkCodexThread,
     handleApprovalDecision,
     handleApprovalInput,
@@ -41,18 +39,9 @@ export default function Page() {
     steerCodexTurn,
     stopCaptureAndSave,
     threadListResult,
+    threadListVersion,
     visibleTabs,
   } = useAgentsRuntime()
-
-  const [threadBrowserOpen, setThreadBrowserOpen] = useState(false)
-
-  const codexHubUrl = agents.find(
-    (agent: Agent) => agent.protocol === "codex"
-  )?.url
-
-  const closeThreadBrowser = useCallback(() => {
-    setThreadBrowserOpen(false)
-  }, [])
 
   const onApprove = useCallback(
     (item: StreamItem) => handleApprovalResponse(item, true),
@@ -76,18 +65,22 @@ export default function Page() {
   )
 
   const hasStreamItems = activeStreamItems.length > 0
-  const showThreadBrowser = threadBrowserOpen && codexHubUrl
 
   return (
     <AppSidebarShell
       activeTabId={activeTab?.id ?? ""}
       autoFollow={autoFollow}
+      codexHubUrl={codexHubUrl}
+      listCodexThreads={listCodexThreads}
       onArchiveThread={archiveCodexThread}
       onAutoFollowChange={setAutoFollow}
       onForkThread={forkCodexThread}
       onRenameThread={setCodexThreadName}
       onTabChange={setSelectedTabId}
+      resumeCodexThread={resumeCodexThread}
       tabs={visibleTabs}
+      threadListData={threadListResult.current}
+      threadListVersion={threadListVersion}
     >
       <div className="flex items-center justify-between">
         {DEBUG_MODE && (
@@ -124,17 +117,6 @@ export default function Page() {
           </div>
         )}
       </div>
-      {showThreadBrowser && (
-        <div className="mx-auto max-w-3xl px-4 pt-4">
-          <ThreadBrowser
-            hubUrl={codexHubUrl}
-            listCodexThreads={listCodexThreads}
-            onClose={closeThreadBrowser}
-            resumeCodexThread={resumeCodexThread}
-            threadListResult={threadListResult}
-          />
-        </div>
-      )}
       <div className="mx-auto max-w-3xl bg-zinc-950 p-4">
         {!activeAgent && (
           <Shimmer className="text-sm" duration={2}>

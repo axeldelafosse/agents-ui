@@ -1,7 +1,7 @@
 "use client"
 
 import type { Dispatch, MutableRefObject, SetStateAction } from "react"
-import { useCallback, useMemo, useRef } from "react"
+import { useCallback, useMemo, useRef, useState } from "react"
 import type { WsCaptureEvent } from "../capture"
 import {
   CODEX_NON_BUFFERED_TURN_METHODS,
@@ -58,6 +58,7 @@ import {
 } from "@axel-delafosse/protocol/codex-rpc"
 import {
   adaptCodexMessageToStreamItems,
+  adaptCodexThreadHistoryToStreamItems,
   type CodexStreamAdapterState,
   createCodexStreamAdapterState,
 } from "@axel-delafosse/protocol/codex-stream-adapter"
@@ -92,6 +93,7 @@ export interface CodexThreadListResult {
 
 interface UseCodexRuntimeResult {
   archiveCodexThread: (agentId: string, threadId: string) => void
+  codexHubUrl: string | undefined
   codexOutputStates: MutableRefObject<Map<string, CodexOutputState>>
   codexThreadAgentIds: MutableRefObject<Map<string, string>>
   compactCodexThread: (agentId: string, threadId: string) => void
@@ -115,6 +117,7 @@ interface UseCodexRuntimeResult {
   setCodexThreadName: (agentId: string, threadId: string, name: string) => void
   steerCodexTurn: (agentId: string, input: string) => void
   threadListResult: MutableRefObject<CodexThreadListResult>
+  threadListVersion: number
   unarchiveCodexThread: (agentId: string, threadId: string) => void
 }
 
@@ -184,6 +187,8 @@ export function useCodexRuntime({
     data: [],
     nextCursor: null,
   })
+  const [threadListVersion, setThreadListVersion] = useState(0)
+  const [codexHubUrl, setCodexHubUrl] = useState<string | undefined>(undefined)
 
   const trackCodexFrame = useCallback(
     (event: Omit<WsCaptureEvent, "protocol">) => {
@@ -497,7 +502,7 @@ export function useCodexRuntime({
         return
       }
       hub.rpcId++
-      hub.pending.set(hub.rpcId, { type: "thread_list" })
+      hub.pending.set(hub.rpcId, { type: "thread_list", cursor })
       const params: Record<string, unknown> = {}
       if (cursor) {
         params.cursor = cursor
@@ -1521,6 +1526,7 @@ export function useCodexRuntime({
 
       if (ctx.type === "initialize" && msg.result) {
         hub.initialized = true
+        setCodexHubUrl(hub.url)
         sendCodexPayload(
           hub,
           { jsonrpc: "2.0", method: "initialized" },
@@ -1662,6 +1668,51 @@ export function useCodexRuntime({
         hub.primaryThreads.add(threadId)
         bindCodexThreadToAgent(hub, ctx.agentId, threadId)
         requestCodexLoadedList(hub)
+
+        // Hydrate stream items from the thread's historical turns
+        const resumeResult = msg.result as Record<string, unknown> | undefined
+        const thread = resumeResult?.thread as
+          | Record<string, unknown>
+          | undefined
+        const turns = Array.isArray(thread?.turns)
+          ? (thread.turns as Array<{
+              id: string
+              items: Array<Record<string, unknown>>
+              status?: string
+            }>)
+          : []
+        if (turns.length > 0) {
+          const resumeAgentId = ctx.agentId
+          const adapterState =
+            codexStreamAdapterStates.current.get(resumeAgentId) ??
+            createCodexStreamAdapterState()
+          codexStreamAdapterStates.current.set(resumeAgentId, adapterState)
+          const actions = adaptCodexThreadHistoryToStreamItems(
+            adapterState,
+            threadId,
+            turns,
+            resumeAgentId
+          )
+          if (actions.length > 0) {
+            setAgents((prev) => {
+              const idx = prev.findIndex((a) => a.id === resumeAgentId)
+              if (idx === -1) {
+                return prev
+              }
+              const agent = prev[idx]
+              const streamItems = applyStreamActions(
+                agent.streamItems,
+                actions
+              )
+              if (streamItems === agent.streamItems) {
+                return prev
+              }
+              const next = prev.slice()
+              next[idx] = { ...agent, streamItems }
+              return next
+            })
+          }
+        }
       } else if (
         ctx.type === "thread_fork" &&
         ctx.agentId &&
@@ -1678,21 +1729,26 @@ export function useCodexRuntime({
         const result = msg.result as Record<string, unknown> | undefined
         if (result) {
           const data = Array.isArray(result.data) ? result.data : []
+          const mapped = data.map(
+            (t: Record<string, unknown>) =>
+              ({
+                id: String(t.id ?? ""),
+                preview: String(t.preview ?? ""),
+                modelProvider: String(t.modelProvider ?? ""),
+                createdAt: Number(t.createdAt ?? 0),
+                updatedAt: Number(t.updatedAt ?? 0),
+                cwd: String(t.cwd ?? ""),
+              }) as CodexThreadListResult["data"][number]
+          )
+          const prevData = ctx.cursor
+            ? threadListResult.current.data
+            : []
           threadListResult.current = {
-            data: data.map(
-              (t: Record<string, unknown>) =>
-                ({
-                  id: String(t.id ?? ""),
-                  preview: String(t.preview ?? ""),
-                  modelProvider: String(t.modelProvider ?? ""),
-                  createdAt: Number(t.createdAt ?? 0),
-                  updatedAt: Number(t.updatedAt ?? 0),
-                  cwd: String(t.cwd ?? ""),
-                }) as CodexThreadListResult["data"][number]
-            ),
+            data: [...prevData, ...mapped],
             nextCursor:
               typeof result.nextCursor === "string" ? result.nextCursor : null,
           }
+          setThreadListVersion((v) => v + 1)
         }
         pushDebugEvent(
           `codex thread/list received count=${threadListResult.current?.data.length ?? 0}`
@@ -2542,6 +2598,7 @@ export function useCodexRuntime({
 
   return {
     archiveCodexThread,
+    codexHubUrl,
     codexOutputStates,
     codexThreadAgentIds,
     compactCodexThread,
@@ -2557,6 +2614,7 @@ export function useCodexRuntime({
     setCodexThreadName,
     steerCodexTurn,
     threadListResult,
+    threadListVersion,
     unarchiveCodexThread,
   }
 }

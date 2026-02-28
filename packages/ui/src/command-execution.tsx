@@ -1,3 +1,6 @@
+"use client"
+
+import { useState } from "react"
 import {
   getArray,
   getNumber,
@@ -6,11 +9,17 @@ import {
   isStreaming,
   toDisplayText,
 } from "./data"
+import { truncateMiddle } from "./truncate-output"
 import type { StreamItem } from "./types"
 
 interface CommandExecutionProps {
   item: StreamItem
 }
+
+/** Max visible output lines for tool-originated commands. */
+const TOOL_CALL_MAX_LINES = 5
+/** Max visible output lines for user shell commands. */
+const USER_SHELL_MAX_LINES = 50
 
 export function CommandExecution({ item }: CommandExecutionProps) {
   const commandActions = getArray(item.data.item, ["commandActions"])
@@ -33,6 +42,16 @@ export function CommandExecution({ item }: CommandExecutionProps) {
   if (outputText.length === 0 && fallbackOutput !== undefined) {
     content = toDisplayText(fallbackOutput)
   }
+
+  // Determine if this is a user shell command (higher truncation limit)
+  const isUserShell = item.data.source === "user" || item.data.isUserShell === true
+  const maxLines = isUserShell ? USER_SHELL_MAX_LINES : TOOL_CALL_MAX_LINES
+
+  const lines = content.length > 0 ? content.split("\n") : []
+  const needsTruncation = lines.length > maxLines
+  const [expanded, setExpanded] = useState(false)
+
+  const truncated = needsTruncation ? truncateMiddle(lines, maxLines) : null
 
   return (
     <div className="my-1 overflow-hidden rounded-md border border-zinc-800 bg-zinc-950/80">
@@ -57,11 +76,32 @@ export function CommandExecution({ item }: CommandExecutionProps) {
           )}
         </div>
       </div>
-      {content.length > 0 && (
+      {lines.length > 0 && (
         <pre className="max-h-72 overflow-auto p-3 font-mono text-xs text-zinc-300">
-          {content}
+          {needsTruncation && !expanded && truncated ? (
+            <>
+              {truncated.head.join("\n")}
+              {truncated.head.length > 0 ? "\n" : ""}
+              <span className="text-zinc-500">
+                {"\u2026"} +{truncated.omitted} lines
+              </span>
+              {truncated.tail.length > 0 ? "\n" : ""}
+              {truncated.tail.join("\n")}
+            </>
+          ) : (
+            content
+          )}
         </pre>
       )}
+      {needsTruncation ? (
+        <button
+          className="w-full border-zinc-800 border-t px-3 py-1.5 text-left text-xs text-zinc-500 hover:text-zinc-300"
+          onClick={() => setExpanded((prev) => !prev)}
+          type="button"
+        >
+          {expanded ? "Collapse" : `Show all ${lines.length} lines`}
+        </button>
+      ) : null}
     </div>
   )
 }

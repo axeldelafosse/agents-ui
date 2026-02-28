@@ -7,22 +7,28 @@ import { cn } from "@axel-delafosse/ui/utils"
 import { ApprovalRequest } from "./approval-request"
 import { CollabAgent } from "./collab-agent"
 import { CommandExecution } from "./command-execution"
+import type { CompactGroup } from "./compact-stream-items"
+import { compactStreamItems } from "./compact-stream-items"
 import { AgentError } from "./error"
 import { FileChange } from "./file-change"
 import { AgentImage } from "./image"
 import { McpToolCall } from "./mcp-tool-call"
 import { Message } from "./message"
+import { MessageBlock } from "./message-block"
 import { Plan } from "./plan"
 import { RawItem } from "./raw-item"
-import { Reasoning } from "./reasoning"
+import { Reasoning, ReasoningBlock } from "./reasoning"
 import { ReviewMode } from "./review-mode"
 import { Status } from "./status"
-import { Thinking } from "./thinking"
+import { StreamExploringGroup } from "./stream-exploring-group"
+import { StreamToolPair } from "./stream-tool-pair"
+import { Thinking, ThinkingBlock } from "./thinking"
 import { ToolCall } from "./tool-call"
 import { ToolResult } from "./tool-result"
 import { TurnComplete } from "./turn-complete"
 import { TurnDiff } from "./turn-diff"
 import type { StreamApprovalCallbacks, StreamItem } from "./types"
+import { useStreamPacing } from "./use-stream-pacing"
 import { WebSearch } from "./web-search"
 
 export interface FeedProps extends StreamApprovalCallbacks {
@@ -182,6 +188,21 @@ const renderStreamItem = ({
   }
 }
 
+function compactGroupKey(group: CompactGroup, index: number): string {
+  switch (group.kind) {
+    case "single":
+      return group.item.id || `single-${index}`
+    case "exploring-group":
+      return group.groupId
+    case "tool-pair":
+      return `pair-${group.call.id}`
+    case "message-block":
+      return `msg-block-${group.items[0]?.id ?? index}`
+    case "thinking-block":
+      return `thinking-block-${group.items[0]?.id ?? index}`
+  }
+}
+
 export function Feed({
   items,
   className,
@@ -190,29 +211,66 @@ export function Feed({
   onDeny,
   onSubmitInput,
 }: FeedProps) {
-  const visibleItems = useMemo(() => dedupeUserMessageMirrors(items), [items])
+  const pacedItems = useStreamPacing(items)
+
+  const compactedGroups = useMemo(() => {
+    const deduped = dedupeUserMessageMirrors(pacedItems)
+    return compactStreamItems(deduped)
+  }, [pacedItems])
 
   const renderItem = useCallback(
-    ({ item }: { item: StreamItem }) => (
-      <div className="mb-3" role="listitem">
-        {renderStreamItem({
-          item,
-          onApprove,
-          onApproveForSession,
-          onDeny,
-          onSubmitInput,
-        })}
-      </div>
-    ),
+    ({ item: group }: { item: CompactGroup }) => {
+      let content: React.ReactNode
+
+      switch (group.kind) {
+        case "exploring-group":
+          content = <StreamExploringGroup group={group} />
+          break
+        case "tool-pair":
+          content = <StreamToolPair pair={group} />
+          break
+        case "message-block":
+          content = <MessageBlock block={group} />
+          break
+        case "thinking-block": {
+          // If all items are reasoning type, use ReasoningBlock;
+          // otherwise use ThinkingBlock (superset with expand toggle)
+          const allReasoning = group.items.every(
+            (i) => i.type === "reasoning"
+          )
+          content = allReasoning ? (
+            <ReasoningBlock block={group} />
+          ) : (
+            <ThinkingBlock block={group} />
+          )
+          break
+        }
+        case "single":
+          content = renderStreamItem({
+            item: group.item,
+            onApprove,
+            onApproveForSession,
+            onDeny,
+            onSubmitInput,
+          })
+          break
+      }
+
+      return (
+        <div className="mb-3" role="listitem">
+          {content}
+        </div>
+      )
+    },
     [onApprove, onApproveForSession, onDeny, onSubmitInput]
   )
 
   return (
     <LegendList
       className={cn("pl-1", className)}
-      data={visibleItems}
+      data={compactedGroups}
       estimatedItemSize={80}
-      keyExtractor={(item, index) => item.id || `${item.type}-${index}`}
+      keyExtractor={compactGroupKey}
       recycleItems={false}
       renderItem={renderItem}
       role="log"

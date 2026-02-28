@@ -1,7 +1,11 @@
+"use client"
+
 import { cn } from "@axel-delafosse/ui/utils"
 import { getMarkdown, getString, getValue } from "./data"
 import { Markdown } from "./markdown"
+import { Shimmer } from "./shimmer"
 import type { StreamItem } from "./types"
+import { useNewlineGatedText } from "./use-newline-gated-text"
 
 interface MessageProps {
   item: StreamItem
@@ -27,9 +31,12 @@ export function Message({ item }: MessageProps) {
     "input",
     "prompt",
   ])
-  const text = directText ?? nestedText
+  const rawText = directText ?? nestedText
   const role = getString(item.data, ["role", "messageRole", "authorRole"])
   const isUserMessage = role === "user"
+  const isStreaming = item.status === "streaming"
+  const gatedText = useNewlineGatedText(rawText, isStreaming)
+  const text = gatedText
 
   return (
     <div className={cn("py-1", isUserMessage && "flex w-full justify-end")}>
@@ -41,12 +48,16 @@ export function Message({ item }: MessageProps) {
             : "text-zinc-200"
         )}
       >
-        {text && (
+        {text ? (
           <Markdown
             className={cn(isUserMessage && "[&_a]:text-zinc-100")}
             text={text}
           />
-        )}
+        ) : isStreaming ? (
+          <Shimmer as="span" className="text-sm text-zinc-400" duration={2}>
+            Thinking…
+          </Shimmer>
+        ) : null}
       </div>
     </div>
   )

@@ -23,10 +23,7 @@ function normalizePatch(raw: string): string {
 function tryParse(patch: string): FileDiffMetadata[] | null {
   try {
     const parsed = parsePatchFiles(patch)
-    const files: FileDiffMetadata[] = []
-    for (const p of parsed) {
-      files.push(...p.files)
-    }
+    const files = parsed.flatMap((fileSet) => fileSet.files)
     return files.length > 0 ? files : null
   } catch {
     return null

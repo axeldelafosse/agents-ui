@@ -2,7 +2,7 @@ import type { Meta, StoryObj } from "@storybook/nextjs"
 import { Shimmer } from "@axel-delafosse/ui/shimmer"
 
 const meta = {
-  title: "Components/UI/Shimmer",
+  title: "UI/Shimmer",
   component: Shimmer,
   decorators: [
     (Story) => (

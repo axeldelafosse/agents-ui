@@ -324,7 +324,9 @@ function HistorySection({
 
   const threads = threadListData?.data ?? []
   const filteredThreads = threads.filter((t) => !activeThreadIds.has(t.id))
-  const hasMore = threadListData?.nextCursor !== null && threadListData?.nextCursor !== undefined
+  const hasMore =
+    threadListData?.nextCursor !== null &&
+    threadListData?.nextCursor !== undefined
 
   const handleResume = useCallback(
     (threadId: string) => {

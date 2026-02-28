@@ -48,7 +48,7 @@ export interface CodexHub {
     number,
     { agentId?: string; cursor?: string; spawnThread?: boolean; type: string; threadId?: string }
   > // rpcId -> handler context
-  pendingMsgs: Map<string, string> // agentId -> queued message (before threadId ready)
+
   pendingSubagentParents: Array<{ agentId: string; expiresAt: number }>
   pendingTurnEvents: Map<
     string,

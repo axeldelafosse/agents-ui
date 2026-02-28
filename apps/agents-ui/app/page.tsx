@@ -4,10 +4,7 @@ import { DEBUG_MODE } from "@axel-delafosse/agent-runtime/constants"
 import { useAgentsRuntime } from "@axel-delafosse/agent-runtime/hooks/use-agents-runtime"
 import { Feed } from "@axel-delafosse/ui/feed"
 import { Shimmer } from "@axel-delafosse/ui/shimmer"
-import type {
-  StreamApprovalInputValue,
-  StreamItem,
-} from "@axel-delafosse/ui/types"
+import type { StreamItem } from "@axel-delafosse/ui/types"
 import Link from "next/link"
 import { useCallback } from "react"
 import { Streamdown } from "streamdown"
@@ -39,7 +36,6 @@ export default function Page() {
     steerCodexTurn,
     stopCaptureAndSave,
     threadListResult,
-    threadListVersion,
     visibleTabs,
   } = useAgentsRuntime()
 
@@ -58,12 +54,6 @@ export default function Page() {
     [handleApprovalDecision]
   )
 
-  const onSubmitInput = useCallback(
-    (item: StreamItem, value: StreamApprovalInputValue) =>
-      handleApprovalInput(item, value),
-    [handleApprovalInput]
-  )
-
   const hasStreamItems = activeStreamItems.length > 0
 
   return (
@@ -80,7 +70,6 @@ export default function Page() {
       resumeCodexThread={resumeCodexThread}
       tabs={visibleTabs}
       threadListData={threadListResult.current}
-      threadListVersion={threadListVersion}
     >
       <div className="flex items-center justify-between">
         {DEBUG_MODE && (
@@ -171,7 +160,7 @@ export default function Page() {
             onApprove={onApprove}
             onApproveForSession={onApproveForSession}
             onDeny={onDeny}
-            onSubmitInput={onSubmitInput}
+            onSubmitInput={handleApprovalInput}
           />
         )}
         {!hasStreamItems && activeOutput && (

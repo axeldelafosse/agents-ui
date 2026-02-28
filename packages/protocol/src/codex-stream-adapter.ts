@@ -392,6 +392,7 @@ interface CodexItemOptions {
   agentId?: string
   data?: StreamItemData
   itemId?: string
+  now?: () => number
   status?: StreamItemStatus
   text?: string
   threadId?: string
@@ -461,7 +462,7 @@ function createCodexItem(
     id,
     type,
     status: opts?.status ?? "streaming",
-    timestamp: Date.now(),
+    timestamp: (opts?.now ?? Date.now)(),
     ...(opts?.agentId !== undefined && { agentId: opts.agentId }),
     data,
     ...(opts?.itemId !== undefined && { itemId: opts.itemId }),
@@ -631,7 +632,9 @@ function extractCommandExecutionText(
   threadItem: Record<string, unknown>
 ): string {
   const command = readString(threadItem.command)
-  const output = readString(threadItem.aggregatedOutput)
+  const output =
+    readString(threadItem.aggregatedOutput) ??
+    readString(threadItem.aggregated_output)
   if (command && output) {
     return `$ ${command}\n${output}`
   }
@@ -716,10 +719,14 @@ function normalizeThreadItemData(
       ...baseData,
       command: readString(threadItem.command),
       cwd: readString(threadItem.cwd),
-      durationMs: threadItem.durationMs,
-      exitCode: threadItem.exitCode,
-      output: readString(threadItem.aggregatedOutput),
-      processId: readString(threadItem.processId),
+      durationMs: threadItem.durationMs ?? threadItem.duration_ms,
+      exitCode: threadItem.exitCode ?? threadItem.exit_code,
+      output:
+        readString(threadItem.aggregatedOutput) ??
+        readString(threadItem.aggregated_output),
+      processId:
+        readString(threadItem.processId) ??
+        readString(threadItem.process_id),
       status: readString(threadItem.status),
     }
   }
@@ -734,13 +741,14 @@ function normalizeThreadItemData(
     return {
       ...baseData,
       arguments: threadItem.arguments,
-      durationMs: threadItem.durationMs,
+      durationMs: threadItem.durationMs ?? threadItem.duration_ms,
       error: threadItem.error,
-      name: readString(threadItem.tool),
+      name: readString(threadItem.tool) ?? readString(threadItem.tool_name),
       result: threadItem.result,
       server: readString(threadItem.server),
       status: readString(threadItem.status),
-      toolName: readString(threadItem.tool),
+      toolName:
+        readString(threadItem.tool) ?? readString(threadItem.tool_name),
     }
   }
   const messageRole = messageRoleFromThreadItemType(normalizedType)
@@ -753,6 +761,26 @@ function normalizeThreadItemData(
   return baseData
 }
 
+const CODEX_ERROR_TOKENS = [
+  "error",
+  "fail",
+  "denied",
+  "rejected",
+  "cancelled",
+  "aborted",
+  "timeout",
+]
+
+const CODEX_COMPLETE_STATUSES = new Set([
+  "complete",
+  "completed",
+  "done",
+  "finished",
+  "success",
+  "succeeded",
+  "ok",
+])
+
 function completionStatusFromCodexStatus(
   status: string | undefined
 ): StreamItemCompletionStatus | undefined {
@@ -763,22 +791,10 @@ function completionStatusFromCodexStatus(
   if (!normalized) {
     return undefined
   }
-  if (
-    normalized.includes("error") ||
-    normalized.includes("fail") ||
-    normalized.includes("denied")
-  ) {
+  if (CODEX_ERROR_TOKENS.some((token) => normalized.includes(token))) {
     return "error"
   }
-  if (
-    normalized === "complete" ||
-    normalized === "completed" ||
-    normalized === "done" ||
-    normalized === "finished" ||
-    normalized === "success" ||
-    normalized === "succeeded" ||
-    normalized === "ok"
-  ) {
+  if (CODEX_COMPLETE_STATUSES.has(normalized)) {
     return "complete"
   }
   return undefined
@@ -806,7 +822,8 @@ function ensureSourceItem(
   threadId?: string,
   turnId?: string,
   title?: string,
-  data?: StreamItemData
+  data?: StreamItemData,
+  now?: () => number
 ): string {
   const existing = state.sourceItemToStreamItem.get(sourceItemId)
   if (existing) {
@@ -816,6 +833,7 @@ function ensureSourceItem(
     agentId,
     data,
     itemId: sourceItemId,
+    now,
     threadId,
     title,
     turnId,
@@ -870,7 +888,8 @@ function handleCodexApprovalRequest(
   input: CodexStreamAdapterInput,
   agentId: string | undefined,
   threadId: string | undefined,
-  turnId: string | undefined
+  turnId: string | undefined,
+  now?: () => number
 ): StreamItemAction[] {
   const method = input.method
   if (!method) {
@@ -972,6 +991,7 @@ function handleCodexApprovalRequest(
 
   const created = createCodexItem(state, "approval_request", {
     agentId,
+    now,
     status: "complete",
     text: text || undefined,
     title,
@@ -1024,7 +1044,8 @@ export function adaptCodexMessageToStreamItems(
     input,
     agentId,
     threadId,
-    turnId
+    turnId,
+    now
   )
   if (approvalActions.length > 0) {
     return approvalActions
@@ -1108,7 +1129,9 @@ export function adaptCodexMessageToStreamItems(
           },
         },
       ]
-      const output = readString(threadItem.aggregatedOutput)
+      const output =
+        readString(threadItem.aggregatedOutput) ??
+        readString(threadItem.aggregated_output)
       if (output) {
         state.aggregatedCommandOutputBySourceItem.set(threadItemId, output)
       }
@@ -1118,6 +1141,7 @@ export function adaptCodexMessageToStreamItems(
     const created = createCodexItem(state, itemType, {
       agentId,
       itemId: threadItemId,
+      now,
       text: itemText || undefined,
       threadId,
       title: threadItemType,
@@ -1133,7 +1157,9 @@ export function adaptCodexMessageToStreamItems(
       state.sourceItemToStreamItem.set(threadItemId, created.id)
       if (normalizedThreadItemType === "commandExecution") {
         setLatestCommandStreamByTurn(state, threadId, turnId, created.id)
-        const output = readString(threadItem.aggregatedOutput)
+        const output =
+          readString(threadItem.aggregatedOutput) ??
+          readString(threadItem.aggregated_output)
         if (output) {
           state.aggregatedCommandOutputBySourceItem.set(threadItemId, output)
         }
@@ -1176,7 +1202,9 @@ export function adaptCodexMessageToStreamItems(
       agentId,
       threadId,
       turnId,
-      "Plan"
+      "Plan",
+      undefined,
+      now
     )
     const delta = codexTextFromParams(input.params)
     if (!delta) {
@@ -1200,6 +1228,7 @@ export function adaptCodexMessageToStreamItems(
       .join("\n")
     const created = createCodexItem(state, "plan", {
       agentId,
+      now,
       status: "complete",
       text: [explanation, planText].filter(Boolean).join("\n"),
       threadId,
@@ -1232,7 +1261,9 @@ export function adaptCodexMessageToStreamItems(
       agentId,
       threadId,
       turnId,
-      "Reasoning"
+      "Reasoning",
+      undefined,
+      now
     )
     actions.push({
       type: "append_text",
@@ -1255,7 +1286,9 @@ export function adaptCodexMessageToStreamItems(
       agentId,
       threadId,
       turnId,
-      "Reasoning"
+      "Reasoning",
+      undefined,
+      now
     )
     actions.push({ type: "append_text", id: streamId, text: "\n\n" })
     return actions
@@ -1264,6 +1297,7 @@ export function adaptCodexMessageToStreamItems(
   if (method === "codex/event/collab_waiting_begin") {
     const created = createCodexItem(state, "status", {
       agentId,
+      now,
       status: "complete",
       text: "Waiting for collaborator output",
       threadId,
@@ -1303,6 +1337,7 @@ export function adaptCodexMessageToStreamItems(
         const created = createCodexItem(state, "command_execution", {
           agentId,
           itemId: sourceId,
+          now,
           text: `$ ${rawExecCommand.command}\n`,
           threadId,
           title: "Command",
@@ -1367,6 +1402,7 @@ export function adaptCodexMessageToStreamItems(
       const created = createCodexItem(state, "message", {
         agentId,
         data: messageRole ? { role: messageRole } : undefined,
+        now,
         threadId,
         turnId,
       })
@@ -1467,6 +1503,7 @@ export function adaptCodexMessageToStreamItems(
     const created = createCodexItem(state, "command_execution", {
       agentId,
       itemId: sourceId,
+      now,
       text: `$ ${command}\n`,
       threadId,
       title: "Command",
@@ -1497,7 +1534,8 @@ export function adaptCodexMessageToStreamItems(
       "Command",
       {
         command: codexCommandFromParams(input.params),
-      }
+      },
+      now
     )
     setLatestCommandStreamByTurn(state, threadId, turnId, streamId)
     const delta = codexTextFromParams(input.params)
@@ -1541,7 +1579,8 @@ export function adaptCodexMessageToStreamItems(
       "Command",
       {
         command: codexCommandFromParams(input.params),
-      }
+      },
+      now
     )
     setLatestCommandStreamByTurn(state, threadId, turnId, streamId)
     const paramsRecord = readObject(input.params)
@@ -1608,7 +1647,9 @@ export function adaptCodexMessageToStreamItems(
       agentId,
       threadId,
       turnId,
-      "File change"
+      "File change",
+      undefined,
+      now
     )
     const delta = codexTextFromParams(input.params)
     if (!delta) {
@@ -1651,7 +1692,8 @@ export function adaptCodexMessageToStreamItems(
         name: readString(input.params?.tool),
         server: readString(input.params?.server),
         toolName: readString(input.params?.tool),
-      }
+      },
+      now
     )
     const progressDelta =
       readString(input.params?.message) ?? codexTextFromParams(input.params)
@@ -1700,6 +1742,7 @@ export function adaptCodexMessageToStreamItems(
       const created = createCodexItem(state, "command_execution", {
         agentId,
         itemId: sourceId,
+        now,
         text: command ? `$ ${command}\n` : undefined,
         threadId,
         title: "Command",
@@ -1799,6 +1842,7 @@ export function adaptCodexMessageToStreamItems(
           agentId,
           data: completionData,
           itemId: threadItemId,
+          now,
           status: completionStatus ?? "complete",
           text: extractThreadItemText(threadItem) || undefined,
           threadId,
@@ -1849,6 +1893,7 @@ export function adaptCodexMessageToStreamItems(
   if (method === "error") {
     const created = createCodexItem(state, "error", {
       agentId,
+      now,
       status: "error",
       text: codexTextFromParams(input.params) || stringifyUnknown(input.params),
       threadId,
@@ -1864,6 +1909,7 @@ export function adaptCodexMessageToStreamItems(
     }
     const created = createCodexItem(state, "error", {
       agentId,
+      now,
       status: "error",
       text: "Turn failed",
       threadId,
@@ -1878,6 +1924,7 @@ export function adaptCodexMessageToStreamItems(
   if (method === "codex/event/task_complete" || method === "thread/archived") {
     const created = createCodexItem(state, "turn_complete", {
       agentId,
+      now,
       status: "complete",
       text: method === "thread/archived" ? "Thread archived" : "Task complete",
       threadId,
@@ -1890,6 +1937,7 @@ export function adaptCodexMessageToStreamItems(
     const diff = readString(readObject(input.params)?.diff) ?? ""
     const created = createCodexItem(state, "turn_diff", {
       agentId,
+      now,
       status: "complete",
       threadId,
       turnId,
@@ -1905,6 +1953,7 @@ export function adaptCodexMessageToStreamItems(
     const model = readString(input.params?.model) ?? "unknown"
     const created = createCodexItem(state, "status", {
       agentId,
+      now,
       status: "complete",
       text: `Model rerouted to: ${model}`,
       threadId,
@@ -1920,6 +1969,7 @@ export function adaptCodexMessageToStreamItems(
     const message = readString(input.params?.message) ?? "Deprecation notice"
     const created = createCodexItem(state, "status", {
       agentId,
+      now,
       status: "complete",
       text: message,
       threadId,
@@ -1935,6 +1985,7 @@ export function adaptCodexMessageToStreamItems(
     const message = readString(input.params?.message) ?? "Configuration warning"
     const created = createCodexItem(state, "status", {
       agentId,
+      now,
       status: "complete",
       text: message,
       threadId,
@@ -1949,6 +2000,7 @@ export function adaptCodexMessageToStreamItems(
   if (method === "thread/unarchived") {
     const created = createCodexItem(state, "status", {
       agentId,
+      now,
       status: "complete",
       text: "Thread unarchived",
       threadId,
@@ -1975,6 +2027,7 @@ export function adaptCodexMessageToStreamItems(
 
   const created = createCodexItem(state, "raw_item", {
     agentId,
+    now,
     status: "complete",
     threadId,
     title: method,

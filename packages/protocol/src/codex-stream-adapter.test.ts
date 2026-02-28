@@ -1158,4 +1158,189 @@ describe("codex stream adapter", () => {
     expect(created.item.type).toBe("turn_diff")
     expect(created.item.data.diff).toBe("")
   })
+
+  test("normalizes snake_case fields in item/started commandExecution", () => {
+    const state = createCodexStreamAdapterState()
+    const started = adaptCodexMessageToStreamItems(state, {
+      method: "item/started",
+      params: {
+        threadId: "thread-snake",
+        turnId: "turn-snake",
+        item: {
+          id: "cmd-snake-1",
+          type: "commandExecution",
+          command: "echo hello",
+          aggregated_output: "hello",
+          exit_code: 0,
+          duration_ms: 123,
+          process_id: "pid-42",
+        },
+      },
+    })
+    const created = expectCreate(started[0])
+    expect(created.item.data).toMatchObject({
+      command: "echo hello",
+      output: "hello",
+      exitCode: 0,
+      durationMs: 123,
+      processId: "pid-42",
+    })
+  })
+
+  test("normalizes snake_case fields in item/completed commandExecution", () => {
+    const state = createCodexStreamAdapterState()
+
+    adaptCodexMessageToStreamItems(state, {
+      method: "item/started",
+      params: {
+        threadId: "thread-snake-c",
+        turnId: "turn-snake-c",
+        item: {
+          id: "cmd-snake-c-1",
+          type: "commandExecution",
+          command: "bun test",
+        },
+      },
+    })
+
+    const completed = adaptCodexMessageToStreamItems(state, {
+      method: "item/completed",
+      params: {
+        threadId: "thread-snake-c",
+        turnId: "turn-snake-c",
+        itemId: "cmd-snake-c-1",
+        item: {
+          id: "cmd-snake-c-1",
+          type: "commandExecution",
+          status: "completed",
+          exit_code: 0,
+          aggregated_output: "all passed",
+          duration_ms: 500,
+        },
+      },
+    })
+
+    const completion = expectComplete(completed[0])
+    expect(completion.status).toBe("complete")
+    expect(completion.patch).toMatchObject({
+      data: {
+        exitCode: 0,
+        output: "all passed",
+        durationMs: 500,
+        status: "completed",
+      },
+    })
+  })
+
+  test("normalizes snake_case tool_name in item/started mcpToolCall", () => {
+    const state = createCodexStreamAdapterState()
+    const started = adaptCodexMessageToStreamItems(state, {
+      method: "item/started",
+      params: {
+        threadId: "thread-mcp-snake",
+        turnId: "turn-mcp-snake",
+        item: {
+          id: "mcp-snake-1",
+          type: "mcpToolCall",
+          tool_name: "search_files",
+          server: "local",
+          duration_ms: 42,
+        },
+      },
+    })
+    const created = expectCreate(started[0])
+    expect(created.item.data).toMatchObject({
+      name: "search_files",
+      toolName: "search_files",
+      server: "local",
+      durationMs: 42,
+    })
+  })
+
+  test("seeds aggregated command output from snake_case aggregated_output in item/started and surfaces it on item/completed", () => {
+    const state = createCodexStreamAdapterState()
+
+    adaptCodexMessageToStreamItems(state, {
+      method: "item/started",
+      params: {
+        threadId: "thread-agg-snake",
+        turnId: "turn-agg-snake",
+        item: {
+          id: "cmd-agg-snake-1",
+          type: "commandExecution",
+          command: "ls",
+          aggregated_output: "file1.ts\nfile2.ts",
+        },
+      },
+    })
+
+    const completed = adaptCodexMessageToStreamItems(state, {
+      method: "item/completed",
+      params: {
+        threadId: "thread-agg-snake",
+        turnId: "turn-agg-snake",
+        itemId: "cmd-agg-snake-1",
+        item: {
+          id: "cmd-agg-snake-1",
+          type: "commandExecution",
+          status: "completed",
+          exit_code: 0,
+          aggregated_output: "file1.ts\nfile2.ts",
+        },
+      },
+    })
+
+    const completion = expectComplete(
+      completed.find((a) => a.type === "complete")
+    )
+    expect(completion.status).toBe("complete")
+    expect(completion.patch?.data?.output).toBe("file1.ts\nfile2.ts")
+    expect(completion.patch?.data?.exitCode).toBe(0)
+  })
+
+  test("classifies compound error statuses like tool_error and execution_failed", () => {
+    for (const errorStatus of [
+      "tool_error",
+      "execution_failed",
+      "permission_denied",
+      "request_rejected",
+      "task_cancelled",
+      "connection_aborted",
+      "request_timeout",
+    ]) {
+      const freshState = createCodexStreamAdapterState()
+
+      adaptCodexMessageToStreamItems(freshState, {
+        method: "item/started",
+        params: {
+          threadId: "thread-status",
+          turnId: "turn-status",
+          item: {
+            id: `item-${errorStatus}`,
+            type: "commandExecution",
+            command: "test",
+          },
+        },
+      })
+
+      const completed = adaptCodexMessageToStreamItems(freshState, {
+        method: "item/completed",
+        params: {
+          threadId: "thread-status",
+          turnId: "turn-status",
+          itemId: `item-${errorStatus}`,
+          item: {
+            id: `item-${errorStatus}`,
+            type: "commandExecution",
+            status: errorStatus,
+          },
+        },
+      })
+
+      const completion = expectComplete(
+        completed.find((a) => a.type === "complete")
+      )
+      expect(completion.status).toBe("error")
+    }
+  })
 })

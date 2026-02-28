@@ -326,33 +326,6 @@ function sendCodexApprovalResponse(
   })
 }
 
-function sendCodexApprovalResponseWithDecision(
-  agentId: string,
-  item: StreamItem,
-  decision: CodexApprovalDecision,
-  sendCodexRpcResponse: SendCodexRpcResponse
-): void {
-  const requestId = item.data.requestId
-  if (requestId === undefined) {
-    return
-  }
-  const requestMethod =
-    typeof item.data.requestMethod === "string"
-      ? item.data.requestMethod
-      : undefined
-  if (requestMethod === CODEX_USER_INPUT_METHOD) {
-    return
-  }
-  const approved =
-    decision === "accept" ||
-    decision === "acceptForSession" ||
-    decision === "acceptWithExecpolicyAmendment"
-  sendCodexRpcResponse(agentId, requestId as number | string, {
-    decision,
-    approved,
-  })
-}
-
 export function useAgentsRuntime() {
   const [agents, setAgents] = useState<Agent[]>([])
   const [autoFollow, setAutoFollow] = useState(false)
@@ -673,11 +646,12 @@ export function useAgentsRuntime() {
       if (agent.protocol !== "codex") {
         return
       }
-      sendCodexApprovalResponseWithDecision(
+      sendCodexApprovalResponse(
         agentId,
         item,
-        decision,
-        sendCodexRpcResponse
+        true,
+        sendCodexRpcResponse,
+        decision
       )
     },
     [sendCodexRpcResponse]

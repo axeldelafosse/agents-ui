@@ -1,4 +1,4 @@
-import { useMemo } from "react"
+import { type ReactNode, useMemo } from "react"
 import type { StreamItem } from "@axel-delafosse/protocol/stream-items"
 import { readString, readValue, toPrettyJson } from "./data"
 import { DiffView } from "./diff-view"
@@ -63,6 +63,27 @@ export function ToolResult({ item }: { item: StreamItem }) {
     [isNumberedSource, resultText]
   )
 
+  let resultContent: ReactNode
+  if (isDiff) {
+    resultContent = <DiffView patch={resultText} />
+  } else if (isNumberedSource && cleanCode) {
+    resultContent = <CodeBlock code={cleanCode} />
+  } else {
+    resultContent = (
+      <details
+        className="rounded-md border border-zinc-800 bg-zinc-900/40 p-3"
+        open
+      >
+        <summary className="cursor-pointer font-medium text-zinc-200">
+          Output
+        </summary>
+        <pre className="mt-2 overflow-x-auto rounded bg-zinc-950 p-2 font-mono text-xs text-zinc-200">
+          {resultText}
+        </pre>
+      </details>
+    )
+  }
+
   return (
     <ItemShell item={item} label="Tool Result">
       {errorText && (
@@ -71,23 +92,7 @@ export function ToolResult({ item }: { item: StreamItem }) {
         </p>
       )}
 
-      {isDiff ? (
-        <DiffView patch={resultText} />
-      ) : isNumberedSource && cleanCode ? (
-        <CodeBlock code={cleanCode} />
-      ) : (
-        <details
-          className="rounded-md border border-zinc-800 bg-zinc-900/40 p-3"
-          open
-        >
-          <summary className="cursor-pointer font-medium text-zinc-200">
-            Output
-          </summary>
-          <pre className="mt-2 overflow-x-auto rounded bg-zinc-950 p-2 font-mono text-xs text-zinc-200">
-            {resultText}
-          </pre>
-        </details>
-      )}
+      {resultContent}
     </ItemShell>
   )
 }

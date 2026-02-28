@@ -39,7 +39,6 @@ interface AppSidebarProps extends AppSidebarActions {
   resumeCodexThread?: (hubUrl: string, threadId: string) => void
   tabs: readonly AgentTab[]
   threadListData?: CodexThreadListResult
-  threadListVersion?: number
 }
 
 type TabKebabMenuProps = AppSidebarActions & {
@@ -87,10 +86,6 @@ function TabKebabMenu({
     setThreadName(defaultThreadName)
     setRenaming(false)
   }, [defaultThreadName])
-
-  const handleRename = useCallback(() => {
-    startRename()
-  }, [startRename])
 
   const handleFork = useCallback(() => {
     closeMenu()
@@ -168,7 +163,7 @@ function TabKebabMenu({
           {onRenameThread && (
             <button
               className="w-full px-3 py-1.5 text-left text-xs text-zinc-200 hover:bg-zinc-800"
-              onClick={handleRename}
+              onClick={startRename}
               type="button"
             >
               Rename
@@ -289,14 +284,12 @@ function HistorySection({
   resumeCodexThread,
   tabs,
   threadListData,
-  threadListVersion: _threadListVersion,
 }: {
   codexHubUrl: string
   listCodexThreads: (hubUrl: string, cursor?: string) => void
   resumeCodexThread: (hubUrl: string, threadId: string) => void
   tabs: readonly AgentTab[]
   threadListData?: CodexThreadListResult
-  threadListVersion?: number
 }) {
   const [expanded, setExpanded] = useState(false)
   const { isMobile, setOpenMobile } = useSidebar()
@@ -410,7 +403,6 @@ export function AppSidebar({
   resumeCodexThread,
   tabs,
   threadListData,
-  threadListVersion,
 }: AppSidebarProps) {
   const { state } = useSidebar()
   const isCollapsed = state === "collapsed"
@@ -470,7 +462,6 @@ export function AppSidebar({
             resumeCodexThread={resumeCodexThread}
             tabs={tabs}
             threadListData={threadListData}
-            threadListVersion={threadListVersion}
           />
         )}
       </SidebarContent>

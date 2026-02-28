@@ -121,6 +121,33 @@ interface UseCodexRuntimeResult {
   unarchiveCodexThread: (agentId: string, threadId: string) => void
 }
 
+const CODEX_QUIET_NOTIFICATION_METHODS = new Set([
+  "item/agentMessage/delta",
+  "codex/event/agent_message_delta",
+  "codex/event/agent_message_content_delta",
+  "codex/event/raw_response_item",
+  "rawResponseItem/completed",
+  "codex/event/agent_message",
+  "codex/event/item_completed",
+  "codex/event/token_count",
+  "account/rateLimits/updated",
+  "thread/tokenUsage/updated",
+  "item/commandExecution/outputDelta",
+  "codex/event/exec_command_output_delta",
+  "codex/event/exec_command_begin",
+  "codex/event/exec_command_end",
+  "item/reasoning/summaryTextDelta",
+  "item/reasoning/summaryPartAdded",
+  "item/reasoning/textDelta",
+  "codex/event/agent_reasoning",
+  "codex/event/agent_reasoning_delta",
+  "codex/event/reasoning_content_delta",
+  "codex/event/agent_reasoning_section_break",
+  "item/started",
+  "codex/event/item_started",
+  "codex/event/collab_waiting_begin",
+])
+
 const CODEX_DEFAULT_THREAD_START_PARAMS = {
   approvalPolicy: "never",
   sandbox: "danger-full-access",
@@ -198,7 +225,7 @@ export function useCodexRuntime({
   )
 
   const sendCodexPayload = useCallback(
-    (hub: CodexHub, payload: unknown, agentId?: string) => {
+    (hub: CodexHub, payload: unknown, agentId?: string): boolean => {
       const rawPayload = JSON.stringify(payload)
       trackCodexFrame({
         agentId,
@@ -208,7 +235,16 @@ export function useCodexRuntime({
         timestamp: Date.now(),
         url: hub.url,
       })
-      hub.ws.send(rawPayload)
+      if (hub.ws.readyState !== WebSocket.OPEN) {
+        return false
+      }
+      try {
+        hub.ws.send(rawPayload)
+        return true
+      } catch {
+        // Socket may have closed between readyState check and send
+        return false
+      }
     },
     [trackCodexFrame]
   )
@@ -447,17 +483,22 @@ export function useCodexRuntime({
       }
       hub.threadMetaRequested.add(threadId)
       hub.rpcId++
-      hub.pending.set(hub.rpcId, { agentId, type: "thread_read", threadId })
-      sendCodexPayload(
+      const rpcId = hub.rpcId
+      hub.pending.set(rpcId, { agentId, type: "thread_read", threadId })
+      const sent = sendCodexPayload(
         hub,
         {
           jsonrpc: "2.0",
           method: "thread/read",
-          id: hub.rpcId,
+          id: rpcId,
           params: { threadId, includeTurns: false },
         },
         agentId
       )
+      if (!sent) {
+        hub.pending.delete(rpcId)
+        hub.threadMetaRequested.delete(threadId)
+      }
     },
     [sendCodexPayload]
   )
@@ -1415,33 +1456,7 @@ export function useCodexRuntime({
       if (mappedThreadId) {
         hub.threads.set(mappedThreadId, routedAgentId)
       }
-      const quietMethods = new Set([
-        "item/agentMessage/delta",
-        "codex/event/agent_message_delta",
-        "codex/event/agent_message_content_delta",
-        "codex/event/raw_response_item",
-        "rawResponseItem/completed",
-        "codex/event/agent_message",
-        "codex/event/item_completed",
-        "codex/event/token_count",
-        "account/rateLimits/updated",
-        "thread/tokenUsage/updated",
-        "item/commandExecution/outputDelta",
-        "codex/event/exec_command_output_delta",
-        "codex/event/exec_command_begin",
-        "codex/event/exec_command_end",
-        "item/reasoning/summaryTextDelta",
-        "item/reasoning/summaryPartAdded",
-        "item/reasoning/textDelta",
-        "codex/event/agent_reasoning",
-        "codex/event/agent_reasoning_delta",
-        "codex/event/reasoning_content_delta",
-        "codex/event/agent_reasoning_section_break",
-        "item/started",
-        "codex/event/item_started",
-        "codex/event/collab_waiting_begin",
-      ])
-      if (!quietMethods.has(msg.method ?? "")) {
+      if (!CODEX_QUIET_NOTIFICATION_METHODS.has(msg.method ?? "")) {
         pushDebugEvent(
           `codex route method=${msg.method ?? "unknown"} thread=${shortId(notificationThreadId) || "-"} turn=${shortId(routeTurnId) || "-"} agent=${shortId(routedAgentId)}`
         )
@@ -1561,30 +1576,7 @@ export function useCodexRuntime({
           return
         }
         hub.primaryThreads.add(threadId)
-        const mappedAgentId = bindCodexThreadToAgent(hub, ctx.agentId, threadId)
-        // send pending message if any
-        const pending =
-          hub.pendingMsgs.get(ctx.agentId) ?? hub.pendingMsgs.get(mappedAgentId)
-        if (pending) {
-          hub.pendingMsgs.delete(ctx.agentId)
-          hub.pendingMsgs.delete(mappedAgentId)
-          hub.rpcId++
-          hub.pending.set(hub.rpcId, {
-            agentId: mappedAgentId,
-            threadId,
-            type: "turn_start",
-          })
-          sendCodexPayload(
-            hub,
-            {
-              jsonrpc: "2.0",
-              method: "turn/start",
-              id: hub.rpcId,
-              params: { threadId, input: [{ type: "text", text: pending }] },
-            },
-            mappedAgentId
-          )
-        }
+        bindCodexThreadToAgent(hub, ctx.agentId, threadId)
         // subscribe to all other loaded threads so we see their output
         requestCodexLoadedList(hub)
       } else if (ctx.type === "loaded_list") {
@@ -1593,15 +1585,18 @@ export function useCodexRuntime({
           return
         }
         const loadedThreadIds = new Set(loadedThreads)
+
+        // Collect threads to prune (not in loaded set)
+        const threadsToPrune: Array<[string, string]> = []
         for (const [threadId, agentId] of hub.threads.entries()) {
-          if (loadedThreadIds.has(threadId)) {
-            continue
+          if (!loadedThreadIds.has(threadId)) {
+            threadsToPrune.push([threadId, agentId])
           }
+        }
+
+        for (const [threadId, agentId] of threadsToPrune) {
           hub.threads.delete(threadId)
           hub.threadMetaRequested.delete(threadId)
-          hub.agents.delete(agentId)
-          setAgentStatus(agentId, "disconnected")
-          clearCodexAgentRuntimeState(agentId)
           for (const [turnId, turnAgentId] of hub.turns.entries()) {
             if (turnAgentId === agentId) {
               hub.turns.delete(turnId)
@@ -1611,6 +1606,15 @@ export function useCodexRuntime({
             if (turnThreadId === threadId) {
               hub.turnThreads.delete(turnId)
             }
+          }
+          // Only disconnect agent if it has no remaining threads on this hub
+          const agentHasOtherThreads = [...hub.threads.values()].includes(
+            agentId
+          )
+          if (!agentHasOtherThreads) {
+            hub.agents.delete(agentId)
+            setAgentStatus(agentId, "disconnected")
+            clearCodexAgentRuntimeState(agentId)
           }
         }
 
@@ -1919,7 +1923,6 @@ export function useCodexRuntime({
         turns: new Map(),
         threadMetaRequested: new Set(),
         pending: new Map(),
-        pendingMsgs: new Map(),
         pendingSubagentParents: [],
         pendingTurnEvents: new Map(),
       }
@@ -2017,6 +2020,7 @@ export function useCodexRuntime({
           const scheduled = scheduleReconnect(targetUrl, attempt, () => {
             const newWs = new WebSocket(targetUrl)
             let connectedHub: CodexHub | undefined
+            let aborted = false
 
             newWs.onopen = () => {
               // If discovery already created a hub for this URL, abort the
@@ -2025,6 +2029,7 @@ export function useCodexRuntime({
                 pushDebugEvent(
                   `codex reconnect-abort hub=${hostFromUrl(targetUrl)} (discovery already connected)`
                 )
+                aborted = true
                 newWs.close()
                 reconnectTimers.delete(targetUrl)
                 return
@@ -2048,7 +2053,6 @@ export function useCodexRuntime({
                 turns: new Map(),
                 threadMetaRequested: new Set(),
                 pending: new Map(),
-                pendingMsgs: new Map(),
                 pendingSubagentParents: [],
                 pendingTurnEvents: new Map(),
               }
@@ -2083,6 +2087,11 @@ export function useCodexRuntime({
 
             // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: reconnect lifecycle with thread cleanup
             newWs.onclose = () => {
+              // If onopen aborted because discovery already owns this URL,
+              // skip cleanup and reconnect to avoid churn.
+              if (aborted) {
+                return
+              }
               codexHubs.delete(targetUrl)
               if (connectedHub) {
                 // Clear stale thread→agent mappings before marking agents as disconnected

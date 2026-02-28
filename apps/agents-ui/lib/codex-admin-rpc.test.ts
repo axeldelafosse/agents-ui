@@ -23,7 +23,6 @@ function createMockHub(): CodexHub & { _sent: unknown[] } {
     initialized: true,
     lineBuffer: "",
     pending: new Map(),
-    pendingMsgs: new Map(),
     pendingSubagentParents: [],
     pendingTurnEvents: new Map(),
     primaryThreads: new Set(),

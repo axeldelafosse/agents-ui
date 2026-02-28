@@ -104,6 +104,14 @@ export function useStreamPacing<T>(items: readonly T[]): readonly T[] {
         }
         return changed ? updated : prev
       })
+      // Reconcile queued items that may have mutated upstream
+      const releasedCount = prevLen - queueRef.current.length
+      for (let qi = 0; qi < queueRef.current.length; qi++) {
+        const sourceIdx = releasedCount + qi
+        if (sourceIdx < newLen && items[sourceIdx] !== queueRef.current[qi].item) {
+          queueRef.current[qi] = { ...queueRef.current[qi], item: items[sourceIdx] }
+        }
+      }
     }
 
     prevLengthRef.current = newLen

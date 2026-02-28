@@ -7,6 +7,7 @@ import {
 import type { AgentTab } from "@axel-delafosse/agent-runtime/types"
 import { cn } from "@axel-delafosse/ui/utils"
 import { EllipsisVertical } from "lucide-react"
+import type { FormEvent, MouseEvent } from "react"
 import { useCallback, useState } from "react"
 import {
   Sidebar,
@@ -37,6 +38,7 @@ interface AppSidebarProps extends AppSidebarActions {
 
 type TabKebabMenuProps = AppSidebarActions & {
   agentId: string
+  defaultThreadName?: string
   threadId: string
 }
 
@@ -45,20 +47,44 @@ function TabKebabMenu({
   onArchiveThread,
   onForkThread,
   onRenameThread,
+  defaultThreadName = "",
   threadId,
 }: TabKebabMenuProps) {
   const [open, setOpen] = useState(false)
+  const [renaming, setRenaming] = useState(false)
+  const [threadName, setThreadName] = useState(defaultThreadName)
 
   const closeMenu = useCallback(() => setOpen(false), [])
+  const stopPropagation = useCallback((event: MouseEvent) => {
+    event.stopPropagation()
+  }, [])
+
+  const startRename = useCallback(() => {
+    closeMenu()
+    setThreadName(defaultThreadName)
+    setRenaming(true)
+  }, [closeMenu, defaultThreadName])
+
+  const renameThread = useCallback(
+    (event: FormEvent<HTMLFormElement>) => {
+      event.preventDefault()
+      const normalizedName = threadName.trim()
+      if (normalizedName && onRenameThread) {
+        onRenameThread(agentId, threadId, normalizedName)
+      }
+      setRenaming(false)
+    },
+    [agentId, onRenameThread, threadId, threadName]
+  )
+
+  const cancelRename = useCallback(() => {
+    setThreadName(defaultThreadName)
+    setRenaming(false)
+  }, [defaultThreadName])
 
   const handleRename = useCallback(() => {
-    closeMenu()
-    // biome-ignore lint/suspicious/noAlert: simple prompt is acceptable for debug agent controls
-    const name = globalThis.prompt("New thread name:")
-    if (name && onRenameThread) {
-      onRenameThread(agentId, threadId, name)
-    }
-  }, [agentId, closeMenu, onRenameThread, threadId])
+    startRename()
+  }, [startRename])
 
   const handleFork = useCallback(() => {
     closeMenu()
@@ -70,14 +96,63 @@ function TabKebabMenu({
     onArchiveThread?.(agentId, threadId)
   }, [agentId, closeMenu, onArchiveThread, threadId])
 
+  const handleMenuToggle = useCallback(
+    (event: MouseEvent<HTMLButtonElement>) => {
+      event.stopPropagation()
+      setOpen((value) => !value)
+    },
+    []
+  )
+
+  if (renaming) {
+    return (
+      <form
+        className="absolute top-4 right-0 z-50 mt-1 w-52 rounded-md border border-zinc-700 bg-zinc-900 p-2 shadow-lg"
+        onSubmit={renameThread}
+      >
+        <label className="sr-only" htmlFor={`thread-name-${threadId}`}>
+          New thread name
+        </label>
+        <input
+          autoFocus
+          className="w-full rounded border border-zinc-700 bg-zinc-950 px-2 py-1 text-xs text-zinc-100"
+          id={`thread-name-${threadId}`}
+          onChange={(event) => setThreadName(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Escape") {
+              cancelRename()
+            }
+          }}
+          onMouseDown={stopPropagation}
+          type="text"
+          value={threadName}
+        />
+        <div className="mt-2 flex gap-1">
+          <button
+            className="rounded bg-zinc-800 px-2 py-1 text-xs text-zinc-100"
+            onMouseDown={stopPropagation}
+            type="submit"
+          >
+            Save
+          </button>
+          <button
+            className="rounded bg-zinc-900 px-2 py-1 text-xs text-zinc-300"
+            onClick={cancelRename}
+            onMouseDown={stopPropagation}
+            type="button"
+          >
+            Cancel
+          </button>
+        </div>
+      </form>
+    )
+  }
+
   return (
     <div className="absolute inset-y-0 right-2 my-auto h-fit">
       <button
         className="rounded p-1 text-zinc-400 hover:bg-zinc-700 hover:text-zinc-200"
-        onClick={(event) => {
-          event.stopPropagation()
-          setOpen((value) => !value)
-        }}
+        onClick={handleMenuToggle}
         type="button"
       >
         <EllipsisVertical className="size-4" />
@@ -177,6 +252,7 @@ function SidebarTabItem({
         {hasActions && !isCollapsed && (
           <TabKebabMenu
             agentId={representative.id}
+            defaultThreadName={representative.threadName}
             onArchiveThread={onArchiveThread}
             onForkThread={onForkThread}
             onRenameThread={onRenameThread}
